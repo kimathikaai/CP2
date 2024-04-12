@@ -173,7 +173,8 @@ def main_worker(gpu, ngpus_per_node, args):
 
     cudnn.benchmark = True
 
-    traindir = os.path.join(data_dir, 'train')
+    #traindir = os.path.join(data_dir, 'train')
+    traindir = data_dir
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
     augmentation = [
