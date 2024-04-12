@@ -20,7 +20,8 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
-from mmcv.utils import Config
+# from mmcv.utils import Config
+from mmengine.config import Config
 
 import loader
 import builder
