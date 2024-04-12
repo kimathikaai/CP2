@@ -25,14 +25,14 @@ chmod u+x tools/dist_train.sh
 For pretraining CP2 from scratch, run the following command:
 ```
 python main.py --data PATH_TO_YOUR_IMAGENET \
-    --config config/config_pretrain.py \
+    --config configs/config_pretrain.py \
     --epochs 200 --lr 0.015 -b 256
 ```
 
 For Quick Tuning, you should first edit the config file `config/config_pretrain.py`, setting the `pretrained_path` to your pretrained backbone, and run the command below:
 ```
 python main.py --data PATH_TO_YOUR_IMAGENET \
-    --config config/config_pretrain.py \
+    --config configs/config_pretrain.py \
     --epochs 20 --lr 0.015 -b 256
 ```
 
