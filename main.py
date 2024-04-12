@@ -244,7 +244,7 @@ def main_worker(gpu, ngpus_per_node, args):
                     and args.rank % ngpus_per_node == 0):
                 save_checkpoint({
                     'epoch': epoch + 1,
-                    'arch': args.arch,
+                    # 'arch': args.arch,
                     'state_dict': model.state_dict(),
                     'optimizer' : optimizer.state_dict(),
                 }, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
