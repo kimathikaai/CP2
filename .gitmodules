@@ -1,3 +1,4 @@
 [submodule "mmsegmentation"]
 	path = mmsegmentation
 	url = git@github.com:kimathikaai/mmsegmentation.git
+    branch = "develop"
