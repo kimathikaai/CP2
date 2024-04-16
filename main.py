@@ -279,7 +279,7 @@ def main_worker(rank, args):
             optimizer,
             epoch,
             args,
-            device
+            device,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -473,7 +473,9 @@ if __name__ == "__main__":
     )
 
     # create logging dir
-    os.mkdir(os.path.join(args.log_dir, args.run_id))
+    log_path = os.path.join(args.log_dir, args.run_id)
+    os.mkdir(log_path)
+    logging.info(f"{log_path = }")
 
     # set seed
     if args.seed is not None:
