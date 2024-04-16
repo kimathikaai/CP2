@@ -96,6 +96,9 @@ def get_args():
 
 
 def main(args):
+    # create the logging directory
+    os.mkdir(args.log_dir)
+
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
