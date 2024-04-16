@@ -166,6 +166,8 @@ def main_worker(gpu, ngpus_per_node, args):
     else:
         raise NotImplementedError("Only DistributedDataParallel is supported.")
 
+    logging.info('Initialized the model')
+
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
 
     if args.optim == "adamw":
@@ -179,6 +181,8 @@ def main_worker(gpu, ngpus_per_node, args):
         )
     else:
         raise NotImplementedError("Only sgd and adamw optimizers are supported.")
+
+    logging.info('Initialized optimizer')
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -215,7 +219,7 @@ def main_worker(gpu, ngpus_per_node, args):
         transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        normalize,
+        # normalize,
     ]
 
     # simply use RandomErasing for Copy-Paste implementation:
@@ -227,7 +231,7 @@ def main_worker(gpu, ngpus_per_node, args):
         transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        normalize,
+        # normalize,
         transforms.RandomErasing(p=1.0, scale=(0.5, 0.8), ratio=(0.8, 1.25), value=0.0),
     ]
 
@@ -247,6 +251,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # train_dataset_bg = datasets.ImageFolder(
     #     traindir, transforms.Compose(augmentation_bg)
     # )
+    logging.info('Initialized datasets')
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -290,6 +295,8 @@ def main_worker(gpu, ngpus_per_node, args):
         sampler=train_sampler_bg1,
         drop_last=True,
     )
+
+    logging.info('Initialized data loaders')
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
