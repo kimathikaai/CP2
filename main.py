@@ -44,8 +44,16 @@ def get_args():
     parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
     parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
     parser.add_argument("--test_csv_path", nargs="+", help="CSVs with test data paths")
-    parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
+    parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
+
+    # Distributed training
+    parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
+                        help='url used to set up distributed training')
+    parser.add_argument('--dist-backend', default='nccl', type=str,
+                        help='distributed backend')
+    parser.add_argument('--world-size', default=1, type=int,
+                        help='number of nodes for distributed training')
 
     parser.add_argument('--epochs', default=200, type=int, metavar='N',
                         help='number of total epochs to run')
@@ -71,21 +79,8 @@ def get_args():
                         help='checkpoint saving frequency')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none)')
-    parser.add_argument('--world-size', default=1, type=int,
-                        help='number of nodes for distributed training')
-    parser.add_argument('--rank', default=0, type=int,
-                        help='node rank for distributed training')
-    parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
-                        help='url used to set up distributed training')
-    parser.add_argument('--dist-backend', default='nccl', type=str,
-                        help='distributed backend')
     parser.add_argument('--seed', default=0, type=int,
                         help='seed for initializing training. ')
-    parser.add_argument('--gpu', default=None, type=int,
-                        help='GPU id to use.')
-    parser.add_argument('--multiprocessing-distributed', action='store_true',
-                        help='Use multiple GPUs by default')
-    # parser.set_defaults(multiprocessing_distributed=True)
 
     parser.add_argument('--output-stride', default=16, type=int,
                         help='output stride of encoder')
@@ -181,6 +176,9 @@ def prepare_data(rank, num_workers, args):
 
 def main_worker(rank, args):
     torch.cuda.set_device(rank)
+
+    device = f"cuda:{rank}"
+
     # setup process groups
     setup(rank, args)
 
@@ -238,7 +236,7 @@ def main_worker(rank, args):
 
     logging.info(f"Initialized optimizer ({rank = })")
 
-    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
+    criterion = nn.CrossEntropyLoss().cuda(rank)
 
     # If your model does not change and your input sizes remain the same
     # - then you may benefit from setting torch.backends.cudnn.benchmark = True.
@@ -253,12 +251,10 @@ def main_worker(rank, args):
     if args.resume:
         if os.path.isfile(args.resume):
             logging.info("loading checkpoint '{}'".format(args.resume))
-            if args.gpu is None:
-                checkpoint = torch.load(args.resume)
-            else:
-                # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
+            dist.barrier()
+            # Map model to be loaded to specified single gpu.
+            loc = "cuda:{}".format(rank)
+            checkpoint = torch.load(args.resume, map_location=loc)
             args.start_epoch = checkpoint["epoch"]
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
@@ -271,10 +267,10 @@ def main_worker(rank, args):
             logging.info("=> no checkpoint found at '{}'".format(args.resume))
 
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-            train_sampler_bg0.set_epoch(epoch)
-            train_sampler_bg1.set_epoch(epoch)
+        # When using DistributedSampler, we have to specify the epoch
+        train_sampler.set_epoch(epoch)
+        train_sampler_bg0.set_epoch(epoch)
+        train_sampler_bg1.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
@@ -285,6 +281,7 @@ def main_worker(rank, args):
             optimizer,
             epoch,
             args,
+            device
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -305,7 +302,7 @@ def main_worker(rank, args):
     cleanup()
 
 
-def train(train_loader_list, model, criterion, optimizer, epoch, args):
+def train(train_loader_list, model, criterion, optimizer, epoch, args, device):
     batch_time = AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
     loss_i = AverageMeter("Loss_ins", ":.4f")
@@ -329,13 +326,12 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args):
     ):
         # data_time.update(time.time() - end)
 
-        if args.gpu is not None:
-            images[0] = images[0].cuda(args.gpu, non_blocking=True)
-            images[1] = images[1].cuda(args.gpu, non_blocking=True)
-            bg0 = bg0.cuda(args.gpu, non_blocking=True)
-            bg1 = bg1.cuda(args.gpu, non_blocking=True)
-            # mask_q = mask_q.cuda(args.gpu, non_blocking=True)
-            # mask_k = mask_k.cuda(args.gpu, non_blocking=True)
+        images[0] = images[0].to(device)
+        images[1] = images[1].to(device)
+        bg0 = bg0.to(device)
+        bg1 = bg1.to(device)
+        # mask_q = mask_q.cuda(args.gpu, non_blocking=True)
+        # mask_k = mask_k.cuda(args.gpu, non_blocking=True)
 
         mask_q, mask_k = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
         image_q = images[0] * mask_q.unsqueeze(1) + bg0
