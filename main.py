@@ -1,39 +1,39 @@
 import argparse
 import builtins
+import logging
 import math
 import os
 import random
 import shutil
 import time
 import warnings
-import logging
 
 import torch
-import torch.nn as nn
-import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
-import torch.optim
 import torch.multiprocessing as mp
+import torch.nn as nn
+import torch.nn.parallel
+import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-
+import torchvision.transforms as transforms
 # from mmcv.utils import Config
 from mmengine.config import Config
 
-import loader
 import builder
+import loader
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
-handler = logging.FileHandler('./log_cp2.txt')
+handler = logging.FileHandler("./log_cp2.txt")
 handler.setLevel(level=logging.INFO)
-formatter = logging.Formatter('%(message)s')
+formatter = logging.Formatter("%(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+# fmt: off
 parser = argparse.ArgumentParser(description='Copy-Paste Contrastive Pretraining on ImageNet')
 parser.add_argument('--config', help='path to configuration file')
 parser.add_argument('--data', metavar='DIR', help='path to dataset')
@@ -81,6 +81,7 @@ parser.set_defaults(multiprocessing_distributed=True)
 
 parser.add_argument('--output-stride', default=16, type=int,
                     help='output stride of encoder')
+# fmt: on
 
 
 def main():
@@ -110,8 +111,10 @@ def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     if args.multiprocessing_distributed and args.gpu != 0:
+
         def print_pass(*args):
             pass
+
         builtins.print = print_pass
 
     if args.distributed:
@@ -119,9 +122,13 @@ def main_worker(gpu, ngpus_per_node, args):
             args.rank = int(os.environ["RANK"])
         if args.multiprocessing_distributed:
             args.rank = args.rank * ngpus_per_node + gpu
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                world_size=args.world_size, rank=args.rank)
-    
+        dist.init_process_group(
+            backend=args.dist_backend,
+            init_method=args.dist_url,
+            world_size=args.world_size,
+            rank=args.rank,
+        )
+
     model = builder.CP2_MOCO(cfg)
     print(model)
 
@@ -131,10 +138,14 @@ def main_worker(gpu, ngpus_per_node, args):
             model.cuda(args.gpu)
             args.batch_size = int(args.batch_size / ngpus_per_node)
             args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, device_ids=[args.gpu], find_unused_parameters=True
+            )
         else:
             model.cuda()
-            model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, find_unused_parameters=True
+            )
     elif args.gpu is not None:
         torch.cuda.set_device(args.gpu)
         model = model.cuda(args.gpu)
@@ -143,13 +154,15 @@ def main_worker(gpu, ngpus_per_node, args):
 
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
 
-    if args.optim == 'adamw':
-        optimizer = torch.optim.AdamW(model.parameters(), args.lr,
-                                      weight_decay=0.01)
-    elif args.optim == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                    momentum=args.momentum,
-                                    weight_decay=args.weight_decay)
+    if args.optim == "adamw":
+        optimizer = torch.optim.AdamW(model.parameters(), args.lr, weight_decay=0.01)
+    elif args.optim == "sgd":
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            args.lr,
+            momentum=args.momentum,
+            weight_decay=args.weight_decay,
+        )
     else:
         raise NotImplementedError("Only sgd and adamw optimizers are supported.")
 
@@ -161,74 +174,98 @@ def main_worker(gpu, ngpus_per_node, args):
                 checkpoint = torch.load(args.resume)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = 'cuda:{}'.format(args.gpu)
+                loc = "cuda:{}".format(args.gpu)
                 checkpoint = torch.load(args.resume, map_location=loc)
-            args.start_epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
+            args.start_epoch = checkpoint["epoch"]
+            model.load_state_dict(checkpoint["state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            print(
+                "=> loaded checkpoint '{}' (epoch {})".format(
+                    args.resume, checkpoint["epoch"]
+                )
+            )
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 
-    #traindir = os.path.join(data_dir, 'train')
+    # traindir = os.path.join(data_dir, 'train')
     traindir = data_dir
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    )
     augmentation = [
-            transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-            transforms.RandomApply([
-                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-            ], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomApply([loader.GaussianBlur([.1, 2.])], p=0.5),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize
-        ]
-    
-    # simply use RandomErasing for Copy-Paste implementation:
-    # erase a random block of background image and replace the erased positions by foreground
-    augmentation_bg = [
-        transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
+        transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
-        transforms.RandomApply([loader.GaussianBlur([.1, 2.])], p=0.5),
+        transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         normalize,
-        transforms.RandomErasing(p=1., scale=(0.5, 0.8), ratio=(0.8, 1.25), value=0.)
+    ]
+
+    # simply use RandomErasing for Copy-Paste implementation:
+    # erase a random block of background image and replace the erased positions by foreground
+    augmentation_bg = [
+        transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+        transforms.RandomGrayscale(p=0.2),
+        transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+        transforms.RandomErasing(p=1.0, scale=(0.5, 0.8), ratio=(0.8, 1.25), value=0.0),
     ]
 
     train_dataset = datasets.ImageFolder(
-        traindir,
-        loader.TwoCropsTransform(transforms.Compose(augmentation)))
+        traindir, loader.TwoCropsTransform(transforms.Compose(augmentation))
+    )
     train_dataset_bg = datasets.ImageFolder(
-        traindir,
-        transforms.Compose(augmentation_bg))
+        traindir, transforms.Compose(augmentation_bg)
+    )
 
     if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, seed=0)
-        train_sampler_bg0 = torch.utils.data.distributed.DistributedSampler(train_dataset_bg, seed=1024)
-        train_sampler_bg1 = torch.utils.data.distributed.DistributedSampler(train_dataset_bg, seed=2048)
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset, seed=0
+        )
+        train_sampler_bg0 = torch.utils.data.distributed.DistributedSampler(
+            train_dataset_bg, seed=1024
+        )
+        train_sampler_bg1 = torch.utils.data.distributed.DistributedSampler(
+            train_dataset_bg, seed=2048
+        )
     else:
         train_sampler = None
         train_sampler_bg0 = None
         train_sampler_bg1 = None
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=(train_sampler is None),
+        num_workers=args.workers,
+        pin_memory=True,
+        sampler=train_sampler,
+        drop_last=True,
+    )
     train_loader_bg0 = torch.utils.data.DataLoader(
-        train_dataset_bg, batch_size=args.batch_size, shuffle=(train_sampler_bg0 is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler_bg0, drop_last=True)
+        train_dataset_bg,
+        batch_size=args.batch_size,
+        shuffle=(train_sampler_bg0 is None),
+        num_workers=args.workers,
+        pin_memory=True,
+        sampler=train_sampler_bg0,
+        drop_last=True,
+    )
     train_loader_bg1 = torch.utils.data.DataLoader(
-        train_dataset_bg, batch_size=args.batch_size, shuffle=(train_sampler_bg1 is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler_bg1, drop_last=True)
+        train_dataset_bg,
+        batch_size=args.batch_size,
+        shuffle=(train_sampler_bg1 is None),
+        num_workers=args.workers,
+        pin_memory=True,
+        sampler=train_sampler_bg1,
+        drop_last=True,
+    )
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -238,37 +275,52 @@ def main_worker(gpu, ngpus_per_node, args):
         adjust_learning_rate(optimizer, epoch, args)
 
         # train for one epoch
-        train([train_loader, train_loader_bg0, train_loader_bg1], model, criterion, optimizer, epoch, args)
+        train(
+            [train_loader, train_loader_bg0, train_loader_bg1],
+            model,
+            criterion,
+            optimizer,
+            epoch,
+            args,
+        )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
-            if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                    and args.rank % ngpus_per_node == 0):
-                save_checkpoint({
-                    'epoch': epoch + 1,
-                    # 'arch': args.arch,
-                    'state_dict': model.state_dict(),
-                    'optimizer' : optimizer.state_dict(),
-                }, is_best=False, filename='checkpoint_{:04d}.pth.tar'.format(epoch))
+            if not args.multiprocessing_distributed or (
+                args.multiprocessing_distributed and args.rank % ngpus_per_node == 0
+            ):
+                save_checkpoint(
+                    {
+                        "epoch": epoch + 1,
+                        # 'arch': args.arch,
+                        "state_dict": model.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                    },
+                    is_best=False,
+                    filename="checkpoint_{:04d}.pth.tar".format(epoch),
+                )
 
 
 def train(train_loader_list, model, criterion, optimizer, epoch, args):
-    batch_time = AverageMeter('Time', ':6.3f')
+    batch_time = AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
-    loss_i = AverageMeter('Loss_ins', ':.4f')
-    loss_d = AverageMeter('Loss_den', ':.4f')
-    acc_ins = AverageMeter('Acc_ins', ':6.2f')
-    acc_seg = AverageMeter('Acc_seg', ':6.2f')
+    loss_i = AverageMeter("Loss_ins", ":.4f")
+    loss_d = AverageMeter("Loss_den", ":.4f")
+    acc_ins = AverageMeter("Acc_ins", ":6.2f")
+    acc_seg = AverageMeter("Acc_seg", ":6.2f")
     train_loader, train_loader_bg0, train_loader_bg1 = train_loader_list
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, loss_i, loss_d, acc_ins, acc_seg],
-        prefix="Epoch: [{}]".format(epoch))
+        prefix="Epoch: [{}]".format(epoch),
+    )
 
     # cre_dense = nn.LogSoftmax(dim=1)
 
     model.train()
 
     end = time.time()
-    for i, ((images, _), (bg0, _), (bg1, _)) in enumerate(zip(train_loader, train_loader_bg0, train_loader_bg1)):
+    for i, ((images, _), (bg0, _), (bg1, _)) in enumerate(
+        zip(train_loader, train_loader_bg0, train_loader_bg1)
+    ):
         # data_time.update(time.time() - end)
 
         if args.gpu is not None:
@@ -285,23 +337,38 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args):
 
         # compute output
         stride = args.output_stride
-        output_instance, output_dense, target_instance, target_dense, mask_dense = model(
-            image_q, image_k,
-            mask_q[:, stride//2::stride, stride//2::stride],
-            mask_k[:, stride//2::stride, stride//2::stride])
+        (
+            output_instance,
+            output_dense,
+            target_instance,
+            target_dense,
+            mask_dense,
+        ) = model(
+            image_q,
+            image_k,
+            mask_q[:, stride // 2 :: stride, stride // 2 :: stride],
+            mask_k[:, stride // 2 :: stride, stride // 2 :: stride],
+        )
         loss_instance = criterion(output_instance, target_instance)
 
         # dense loss of softmax
-        output_dense_log = (-1.) * nn.LogSoftmax(dim=1)(output_dense)
+        output_dense_log = (-1.0) * nn.LogSoftmax(dim=1)(output_dense)
         output_dense_log = output_dense_log.reshape(output_dense_log.shape[0], -1)
         loss_dense = torch.mean(
-            torch.mul(output_dense_log, target_dense).sum(dim=1) / target_dense.sum(dim=1))
+            torch.mul(output_dense_log, target_dense).sum(dim=1)
+            / target_dense.sum(dim=1)
+        )
 
-        loss = loss_instance + loss_dense * .2
+        loss = loss_instance + loss_dense * 0.2
 
         acc1, acc5 = accuracy(output_instance, target_instance, topk=(1, 5))
         acc_dense_pos = output_dense.reshape(output_dense.shape[0], -1).argmax(dim=1)
-        acc_dense = target_dense[torch.arange(0, target_dense.shape[0]), acc_dense_pos].float().mean() * 100.
+        acc_dense = (
+            target_dense[torch.arange(0, target_dense.shape[0]), acc_dense_pos]
+            .float()
+            .mean()
+            * 100.0
+        )
         loss_i.update(loss_instance.item(), images[0].size(0))
         loss_d.update(loss_dense.item(), images[0].size(0))
         acc_ins.update(acc1[0], images[0].size(0))
@@ -320,15 +387,16 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args):
             progress.display(i)
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, "model_best.pth.tar")
 
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
-    def __init__(self, name, fmt=':f'):
+
+    def __init__(self, name, fmt=":f"):
         self.name = name
         self.fmt = fmt
         self.reset()
@@ -346,7 +414,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
     def __str__(self):
-        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
         return fmtstr.format(**self.__dict__)
 
 
@@ -359,21 +427,21 @@ class ProgressMeter(object):
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
-        print('    '.join(entries))
+        print("    ".join(entries))
         if torch.distributed.get_rank() == 0:
-            logger.info('\t'.join(entries))
+            logger.info("\t".join(entries))
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
-        fmt = '{:' + str(num_digits) + 'd}'
-        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
+        fmt = "{:" + str(num_digits) + "d}"
+        return "[" + fmt + "/" + fmt.format(num_batches) + "]"
 
 
 def adjust_learning_rate(optimizer, epoch, args):
     lr = args.lr
-    lr *= 0.5 * (1. + math.cos(math.pi * epoch / args.epochs))
+    lr *= 0.5 * (1.0 + math.cos(math.pi * epoch / args.epochs))
     for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+        param_group["lr"] = lr
 
 
 def accuracy(output, target, topk=(1,)):
@@ -393,5 +461,5 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
