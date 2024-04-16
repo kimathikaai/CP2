@@ -110,4 +110,7 @@ def get_pretrain_dataset(
     included_samples_stems = get_file_stem(included_samples)
     _sample_paths = [x for x in sample_paths if Path(x).stem in included_samples_stems]
 
+    # validate filtering
+    assert len(_sample_paths) == len(included_samples_stems)
+
     return PretrainDataset(_sample_paths, transform)
