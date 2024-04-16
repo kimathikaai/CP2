@@ -84,7 +84,7 @@ def get_args():
                         help='GPU id to use.')
     parser.add_argument('--multiprocessing-distributed', action='store_true',
                         help='Use multiple GPUs by default')
-    parser.set_defaults(multiprocessing_distributed=True)
+    # parser.set_defaults(multiprocessing_distributed=True)
 
     parser.add_argument('--output-stride', default=16, type=int,
                         help='output stride of encoder')
