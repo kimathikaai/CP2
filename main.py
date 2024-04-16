@@ -24,6 +24,7 @@ from mmengine.config import Config
 
 import builder
 import loader
+from datasets.pretrain_dataset import get_pretrain_dataset
 
 logger = logging.getLogger(__name__)
 logger.setLevel(level=logging.INFO)
@@ -36,9 +37,17 @@ logger.addHandler(handler)
 # fmt: off
 parser = argparse.ArgumentParser(description='Copy-Paste Contrastive Pretraining on ImageNet')
 parser.add_argument('--config', help='path to configuration file')
-parser.add_argument('--data', metavar='DIR', help='path to dataset')
+
+#
+# Data
+#
+parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data')
+parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
+parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
+parser.add_argument("--test_csv_path", nargs="+", help="CSVs with test data paths")
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
                     help='number of data loading workers (default: 32)')
+
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--num-images', default=1281167, type=int, metavar='N',
@@ -107,7 +116,7 @@ def main():
 
 def main_worker(gpu, ngpus_per_node, args):
     cfg = Config.fromfile(args.config)
-    data_dir = args.data
+    # data_dir = args.data_dirs
     args.gpu = gpu
 
     if args.multiprocessing_distributed and args.gpu != 0:
@@ -190,7 +199,7 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     # traindir = os.path.join(data_dir, 'train')
-    traindir = data_dir
+    # traindir = data_dir
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
@@ -217,12 +226,22 @@ def main_worker(gpu, ngpus_per_node, args):
         transforms.RandomErasing(p=1.0, scale=(0.5, 0.8), ratio=(0.8, 1.25), value=0.0),
     ]
 
-    train_dataset = datasets.ImageFolder(
-        traindir, loader.TwoCropsTransform(transforms.Compose(augmentation))
+    train_dataset = get_pretrain_dataset(
+        image_directory_list=args.data_dirs,
+        image_csv_list=args.train_csv_paths,
+        transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
     )
-    train_dataset_bg = datasets.ImageFolder(
-        traindir, transforms.Compose(augmentation_bg)
+    train_dataset_bg = get_pretrain_dataset(
+        image_directory_list=args.data_dirs,
+        image_csv_list=args.train_csv_paths,
+        transform=transforms.Compose(augmentation_bg),
     )
+    # train_dataset = datasets.ImageFolder(
+    #     traindir, loader.TwoCropsTransform(transforms.Compose(augmentation))
+    # )
+    # train_dataset_bg = datasets.ImageFolder(
+    #     traindir, transforms.Compose(augmentation_bg)
+    # )
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
