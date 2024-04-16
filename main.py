@@ -6,8 +6,9 @@ import os
 import random
 import shutil
 import time
-import warnings
+from datetime import datetime
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -26,79 +27,79 @@ import builder
 import loader
 from datasets.pretrain_dataset import get_pretrain_dataset
 
-logger = logging.getLogger(__name__)
-logger.setLevel(level=logging.INFO)
-handler = logging.FileHandler("./log_cp2.txt")
-handler.setLevel(level=logging.INFO)
-formatter = logging.Formatter("%(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
-# fmt: off
-parser = argparse.ArgumentParser(description='Copy-Paste Contrastive Pretraining on ImageNet')
-parser.add_argument('--config', help='path to configuration file')
+def get_args():
+    # fmt: off
+    parser = argparse.ArgumentParser(description='Copy-Paste Contrastive Pretraining on ImageNet')
 
-#
-# Data
-#
-parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data')
-parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
-parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
-parser.add_argument("--test_csv_path", nargs="+", help="CSVs with test data paths")
-parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
-                    help='number of data loading workers (default: 32)')
+    parser.add_argument('--config', help='path to configuration file')
+    parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
+    parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
 
-parser.add_argument('--epochs', default=200, type=int, metavar='N',
-                    help='number of total epochs to run')
-parser.add_argument('--num-images', default=1281167, type=int, metavar='N',
-                    help='number of total epochs to run')
-parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
-                    metavar='N', help='total batch size over all GPUs')
-parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
-                    metavar='LR', help='initial learning rate', dest='lr')
-parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                    help='momentum of SGD solver')
-parser.add_argument('--optim', default='sgd', help='optimizer')
-parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
-                    metavar='W', help='weight decay (default: 1e-4)',
-                    dest='weight_decay')
-parser.add_argument('-p', '--print-freq', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--scalar-freq', default=100, type=int,
-                    help='metrics writing frequency')
-parser.add_argument('--ckpt-freq', default=1, type=int,
-                    help='checkpoint saving frequency')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
-                    help='path to latest checkpoint (default: none)')
-parser.add_argument('--world-size', default=1, type=int,
-                    help='number of nodes for distributed training')
-parser.add_argument('--rank', default=0, type=int,
-                    help='node rank for distributed training')
-parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
-                    help='url used to set up distributed training')
-parser.add_argument('--dist-backend', default='nccl', type=str,
-                    help='distributed backend')
-parser.add_argument('--seed', default=None, type=int,
-                    help='seed for initializing training. ')
-parser.add_argument('--gpu', default=None, type=int,
-                    help='GPU id to use.')
-parser.add_argument('--multiprocessing-distributed', action='store_true',
-                    help='Use multiple GPUs by default')
-parser.set_defaults(multiprocessing_distributed=True)
+    #
+    # Data
+    #
+    parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data')
+    parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
+    parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
+    parser.add_argument("--test_csv_path", nargs="+", help="CSVs with test data paths")
+    parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
+                        help='number of data loading workers (default: 32)')
 
-parser.add_argument('--output-stride', default=16, type=int,
-                    help='output stride of encoder')
-# fmt: on
+    parser.add_argument('--epochs', default=200, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('--num-images', default=1281167, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
+                        help='manual epoch number (useful on restarts)')
+    parser.add_argument('-b', '--batch-size', default=256, type=int,
+                        metavar='N', help='total batch size over all GPUs')
+    parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
+                        metavar='LR', help='initial learning rate', dest='lr')
+    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+                        help='momentum of SGD solver')
+    parser.add_argument('--optim', default='sgd', help='optimizer')
+    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
+                        metavar='W', help='weight decay (default: 1e-4)',
+                        dest='weight_decay')
+    parser.add_argument('-p', '--print-freq', default=10, type=int,
+                        metavar='N', help='print frequency (default: 10)')
+    parser.add_argument('--scalar-freq', default=100, type=int,
+                        help='metrics writing frequency')
+    parser.add_argument('--ckpt-freq', default=1, type=int,
+                        help='checkpoint saving frequency')
+    parser.add_argument('--resume', default='', type=str, metavar='PATH',
+                        help='path to latest checkpoint (default: none)')
+    parser.add_argument('--world-size', default=1, type=int,
+                        help='number of nodes for distributed training')
+    parser.add_argument('--rank', default=0, type=int,
+                        help='node rank for distributed training')
+    parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
+                        help='url used to set up distributed training')
+    parser.add_argument('--dist-backend', default='nccl', type=str,
+                        help='distributed backend')
+    parser.add_argument('--seed', default=0, type=int,
+                        help='seed for initializing training. ')
+    parser.add_argument('--gpu', default=None, type=int,
+                        help='GPU id to use.')
+    parser.add_argument('--multiprocessing-distributed', action='store_true',
+                        help='Use multiple GPUs by default')
+    parser.set_defaults(multiprocessing_distributed=True)
 
+    parser.add_argument('--output-stride', default=16, type=int,
+                        help='output stride of encoder')
+    # fmt: on
 
-def main():
     args = parser.parse_args()
 
+    return args
+
+
+def main(args):
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
         cudnn.deterministic = True
 
     if args.dist_url == "env://" and args.world_size == -1:
@@ -178,7 +179,7 @@ def main_worker(gpu, ngpus_per_node, args):
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            print("loading checkpoint '{}'".format(args.resume))
+            logging.info("loading checkpoint '{}'".format(args.resume))
             if args.gpu is None:
                 checkpoint = torch.load(args.resume)
             else:
@@ -188,13 +189,13 @@ def main_worker(gpu, ngpus_per_node, args):
             args.start_epoch = checkpoint["epoch"]
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
-            print(
+            logging.info(
                 "=> loaded checkpoint '{}' (epoch {})".format(
                     args.resume, checkpoint["epoch"]
                 )
             )
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            logging.info("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 
@@ -314,7 +315,11 @@ def main_worker(gpu, ngpus_per_node, args):
                         "optimizer": optimizer.state_dict(),
                     },
                     is_best=False,
-                    filename="checkpoint_{:04d}.pth.tar".format(epoch),
+                    filename=os.path.join(
+                        args.log_dir,
+                        args.run_id,
+                        "checkpoint_{:04d}.pth.tar".format(epoch),
+                    ),
                 )
 
 
@@ -446,9 +451,9 @@ class ProgressMeter(object):
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
-        print("    ".join(entries))
+        logging.info("    ".join(entries))
         if torch.distributed.get_rank() == 0:
-            logger.info("\t".join(entries))
+            logging.info("\t".join(entries))
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
@@ -481,4 +486,11 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == "__main__":
-    main()
+    args = get_args()
+    # set logger
+    logging.basicConfig(
+        format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s",
+        datefmt="%Y-%m-%d:%H:%M:%S",
+        level=logging.INFO,
+    )
+    main(args)

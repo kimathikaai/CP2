@@ -1,4 +1,5 @@
 import csv
+import logging
 import os
 from glob import glob
 from pathlib import Path
@@ -27,7 +28,7 @@ def read_paths_csv(csv_path: str) -> List[str]:
         for row in csvreader:
             path_list.extend(row)
 
-    print(f"Read {len(path_list)} filenames from {csv_path}")
+    logging.info(f"Read {len(path_list)} filenames from {csv_path}")
 
     return path_list
 
@@ -82,7 +83,7 @@ def get_pretrain_dataset(
         os.path.abspath(os.path.expanduser(x)) for x in image_directory_list
     ]
     image_csv_list = [os.path.abspath(os.path.expanduser(x)) for x in image_csv_list]
-    print(
+    logging.info(
         f"[info] Loading image from\n{image_directory_list}\naccording to\n {image_csv_list}"
     )
 
@@ -94,7 +95,7 @@ def get_pretrain_dataset(
         sample_paths.extend(files)
     # sort based on file names
     sample_paths = sorted(sample_paths, key=lambda x: Path(x).stem)
-    print(f"Found {len(sample_paths) = } images")
+    logging.info(f"Found {len(sample_paths) = } images")
 
     # assert that no files share the same name
     sample_names = [Path(x).stem for x in sample_paths]
