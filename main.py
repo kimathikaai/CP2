@@ -37,9 +37,7 @@ def get_args():
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
 
-    #
     # Data
-    #
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
     parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
@@ -492,4 +490,4 @@ if __name__ == "__main__":
     logging.info(f"{args.num_workers_per_dataset = }")
 
     # spawn parallel process
-    mp.spawn(main_worker, args=(args), nprocs=args.world_size)
+    mp.spawn(main_worker, args=[args], nprocs=args.world_size)
