@@ -18,10 +18,11 @@ import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 # from mmcv.utils import Config
 from mmengine.config import Config
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data.distributed import DistributedSampler
 
 import builder
 import loader
@@ -95,120 +96,20 @@ def get_args():
     return args
 
 
-def main(args):
-    # create the logging directory
-    os.mkdir(os.path.join(args.log_dir, args.run_id))
-
-    if args.seed is not None:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-        cudnn.deterministic = True
-
-    if args.dist_url == "env://" and args.world_size == -1:
-        args.world_size = int(os.environ["WORLD_SIZE"])
-
-    args.distributed = args.world_size > 1 or args.multiprocessing_distributed
-    logging.info(f"{args.distributed = }")
-
-    ngpus_per_node = torch.cuda.device_count()
-    if args.multiprocessing_distributed:
-        args.world_size = ngpus_per_node * args.world_size
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
-    else:
-        main_worker(args.gpu, ngpus_per_node, args)
+def cleanup():
+    dist.destroy_process_group()
 
 
-def main_worker(gpu, ngpus_per_node, args):
-    cfg = Config.fromfile(args.config)
-    # data_dir = args.data_dirs
-    args.gpu = gpu
+def setup(rank, args):
+    dist.init_process_group(
+        backend=args.dist_backend,
+        init_method=args.dist_url,
+        world_size=args.world_size,
+        rank=rank,
+    )
 
-    if args.multiprocessing_distributed and args.gpu != 0:
 
-        def print_pass(*args):
-            pass
-
-        builtins.print = print_pass
-
-    if args.distributed:
-        if args.dist_url == "env://" and args.rank == -1:
-            args.rank = int(os.environ["RANK"])
-        if args.multiprocessing_distributed:
-            args.rank = args.rank * ngpus_per_node + gpu
-        dist.init_process_group(
-            backend=args.dist_backend,
-            init_method=args.dist_url,
-            world_size=args.world_size,
-            rank=args.rank,
-        )
-
-    model = builder.CP2_MOCO(cfg)
-    print(model)
-
-    if args.distributed:
-        if args.gpu is not None:
-            torch.cuda.set_device(args.gpu)
-            model.cuda(args.gpu)
-            args.batch_size = int(args.batch_size / ngpus_per_node)
-            args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(
-                model, device_ids=[args.gpu], find_unused_parameters=True
-            )
-        else:
-            model.cuda()
-            model = torch.nn.parallel.DistributedDataParallel(
-                model, find_unused_parameters=True
-            )
-    elif args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-        model = model.cuda(args.gpu)
-    else:
-        raise NotImplementedError("Only DistributedDataParallel is supported.")
-
-    logging.info('Initialized the model')
-
-    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
-
-    if args.optim == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), args.lr, weight_decay=0.01)
-    elif args.optim == "sgd":
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            args.lr,
-            momentum=args.momentum,
-            weight_decay=args.weight_decay,
-        )
-    else:
-        raise NotImplementedError("Only sgd and adamw optimizers are supported.")
-
-    logging.info('Initialized optimizer')
-
-    # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            logging.info("loading checkpoint '{}'".format(args.resume))
-            if args.gpu is None:
-                checkpoint = torch.load(args.resume)
-            else:
-                # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
-                checkpoint = torch.load(args.resume, map_location=loc)
-            args.start_epoch = checkpoint["epoch"]
-            model.load_state_dict(checkpoint["state_dict"])
-            optimizer.load_state_dict(checkpoint["optimizer"])
-            logging.info(
-                "=> loaded checkpoint '{}' (epoch {})".format(
-                    args.resume, checkpoint["epoch"]
-                )
-            )
-        else:
-            logging.info("=> no checkpoint found at '{}'".format(args.resume))
-
-    cudnn.benchmark = True
-
-    # traindir = os.path.join(data_dir, 'train')
-    # traindir = data_dir
+def prepare_data(rank, num_workers, args):
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
@@ -245,58 +146,129 @@ def main_worker(gpu, ngpus_per_node, args):
         image_csv_list=args.train_csv_paths,
         transform=transforms.Compose(augmentation_bg),
     )
-    # train_dataset = datasets.ImageFolder(
-    #     traindir, loader.TwoCropsTransform(transforms.Compose(augmentation))
-    # )
-    # train_dataset_bg = datasets.ImageFolder(
-    #     traindir, transforms.Compose(augmentation_bg)
-    # )
-    logging.info('Initialized datasets')
 
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset, seed=0
+    def get_dataloader(dataset, seed):
+        sampler = DistributedSampler(
+            dataset=train_dataset_bg,
+            num_replicas=args.world_size,
+            rank=rank,
+            shuffle=True,
+            drop_last=True,
+            seed=seed,
         )
-        train_sampler_bg0 = torch.utils.data.distributed.DistributedSampler(
-            train_dataset_bg, seed=1024
+        dataloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=args.batch_size // args.world_size,
+            shuffle=(sampler is None),
+            num_workers=num_workers,
+            pin_memory=False,
+            persistent_workers=True,
+            drop_last=True,
+            sampler=sampler,
         )
-        train_sampler_bg1 = torch.utils.data.distributed.DistributedSampler(
-            train_dataset_bg, seed=2048
+        return dataloader, sampler
+
+    train_loader, train_sampler = get_dataloader(train_dataset, 0)
+    train_loader_bg0, train_sampler_bg0 = get_dataloader(train_dataset_bg, 1024)
+    train_loader_bg1, train_sampler_bg1 = get_dataloader(train_dataset_bg, 2048)
+
+    return (
+        (train_loader, train_sampler),
+        (train_loader_bg0, train_sampler_bg0),
+        (train_loader_bg1, train_sampler_bg1),
+    )
+
+
+def main_worker(rank, args):
+    torch.cuda.set_device(rank)
+    # setup process groups
+    setup(rank, args)
+
+    #
+    # Data
+    #
+    data_loaders = prepare_data(
+        rank=rank,
+        num_workers=args.num_workers_per_dataset,
+        args=args,
+    )
+    (
+        (train_loader, train_sampler),
+        (train_loader_bg0, train_sampler_bg0),
+        (train_loader_bg1, train_sampler_bg1),
+    ) = data_loaders
+    logging.info(f"Initialized data loaders ({rank = })")
+
+    #
+    # Model
+    #
+    # instantiate the model(it's your own model) and move it to the right device
+    cfg = Config.fromfile(args.config)
+    model = builder.CP2_MOCO(cfg)
+    model.cuda(rank)
+    if rank == 0:
+        logging.info(model)
+
+    # wrap the model with DDP
+    # device_ids tell DDP where is your model
+    # output_device tells DDP where to output, in our case, it is rank
+    # find_unused_parameters=True instructs DDP to find unused output of the forward() function of any module in the model
+    model = DistributedDataParallel(
+        model,
+        device_ids=[rank],
+        output_device=rank,
+        find_unused_parameters=True,
+    )
+    logging.info(f"Initialized the model ({rank = })")
+
+    #
+    # Optimizers
+    #
+    if args.optim == "adamw":
+        optimizer = torch.optim.AdamW(model.parameters(), args.lr, weight_decay=0.01)
+    elif args.optim == "sgd":
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            args.lr,
+            momentum=args.momentum,
+            weight_decay=args.weight_decay,
         )
     else:
-        train_sampler = None
-        train_sampler_bg0 = None
-        train_sampler_bg1 = None
+        raise NotImplementedError("Only sgd and adamw optimizers are supported.")
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=(train_sampler is None),
-        num_workers=args.workers,
-        pin_memory=True,
-        sampler=train_sampler,
-        drop_last=True,
-    )
-    train_loader_bg0 = torch.utils.data.DataLoader(
-        train_dataset_bg,
-        batch_size=args.batch_size,
-        shuffle=(train_sampler_bg0 is None),
-        num_workers=args.workers,
-        pin_memory=True,
-        sampler=train_sampler_bg0,
-        drop_last=True,
-    )
-    train_loader_bg1 = torch.utils.data.DataLoader(
-        train_dataset_bg,
-        batch_size=args.batch_size,
-        shuffle=(train_sampler_bg1 is None),
-        num_workers=args.workers,
-        pin_memory=True,
-        sampler=train_sampler_bg1,
-        drop_last=True,
-    )
+    logging.info(f"Initialized optimizer ({rank = })")
 
-    logging.info('Initialized data loaders')
+    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
+
+    # If your model does not change and your input sizes remain the same
+    # - then you may benefit from setting torch.backends.cudnn.benchmark = True.
+    # However, if your model changes: for instance, if you have layers that
+    # are only "activated" when certain conditions are met, or you have
+    # layers inside a loop that can be iterated a different number of times,
+    # then setting torch.backends.cudnn.benchmark = True might stall your execution.
+    # Source: https://stackoverflow.com/questions/58961768/set-torch-backends-cudnn-benchmark-true-or-not
+    cudnn.benchmark = True
+
+    # optionally resume from a checkpoint
+    if args.resume:
+        if os.path.isfile(args.resume):
+            logging.info("loading checkpoint '{}'".format(args.resume))
+            if args.gpu is None:
+                checkpoint = torch.load(args.resume)
+            else:
+                # Map model to be loaded to specified single gpu.
+                loc = "cuda:{}".format(args.gpu)
+                checkpoint = torch.load(args.resume, map_location=loc)
+            args.start_epoch = checkpoint["epoch"]
+            model.load_state_dict(checkpoint["state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            logging.info(
+                "=> loaded checkpoint '{}' (epoch {})".format(
+                    args.resume, checkpoint["epoch"]
+                )
+            )
+        else:
+            logging.info("=> no checkpoint found at '{}'".format(args.resume))
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -315,9 +287,7 @@ def main_worker(gpu, ngpus_per_node, args):
             args,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
-            if not args.multiprocessing_distributed or (
-                args.multiprocessing_distributed and args.rank % ngpus_per_node == 0
-            ):
+            if rank == 0:
                 save_checkpoint(
                     {
                         "epoch": epoch + 1,
@@ -332,6 +302,7 @@ def main_worker(gpu, ngpus_per_node, args):
                         "checkpoint_{:04d}.pth.tar".format(epoch),
                     ),
                 )
+    cleanup()
 
 
 def train(train_loader_list, model, criterion, optimizer, epoch, args):
@@ -497,11 +468,32 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == "__main__":
+    # parse command line
     args = get_args()
+
     # set logger
     logging.basicConfig(
         format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s",
         datefmt="%Y-%m-%d:%H:%M:%S",
         level=logging.INFO,
     )
-    main(args)
+
+    # create logging dir
+    os.mkdir(os.path.join(args.log_dir, args.run_id))
+
+    # set seed
+    if args.seed is not None:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        cudnn.deterministic = True
+
+    logging.info(f"{torch.cuda.device_count() = }")
+    assert args.world_size <= torch.cuda.device_count()
+
+    # get the number of workers
+    args.num_workers_per_dataset = args.num_workers // (args.world_size * 3)
+    logging.info(f"{args.num_workers_per_dataset = }")
+
+    # spawn parallel process
+    mp.spawn(main_worker, args=(args), nprocs=args.world_size)
