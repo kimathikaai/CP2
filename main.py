@@ -343,7 +343,7 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args):
     model.train()
 
     end = time.time()
-    for i, ((images, _), (bg0, _), (bg1, _)) in enumerate(
+    for i, (images, bg0, bg1) in enumerate(
         zip(train_loader, train_loader_bg0, train_loader_bg1)
     ):
         # data_time.update(time.time() - end)
