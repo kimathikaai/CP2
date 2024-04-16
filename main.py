@@ -106,6 +106,7 @@ def main(args):
         args.world_size = int(os.environ["WORLD_SIZE"])
 
     args.distributed = args.world_size > 1 or args.multiprocessing_distributed
+    logging.info(f"{args.distributed = }")
 
     ngpus_per_node = torch.cuda.device_count()
     if args.multiprocessing_distributed:
