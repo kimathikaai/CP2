@@ -97,7 +97,7 @@ def get_args():
 
 def main(args):
     # create the logging directory
-    os.mkdir(args.log_dir)
+    os.mkdir(os.path.join(args.log_dir, args.run_id))
 
     if args.seed is not None:
         random.seed(args.seed)
