@@ -1,4 +1,5 @@
 import argparse
+import copy
 import builtins
 import logging
 import math
@@ -183,7 +184,7 @@ def setup_logger(rank, args):
     handler = logging.FileHandler(os.path.join(args.run_log_dir, f"log-rank{rank}.txt"))
     handler.setLevel(level=logging.INFO)
     formatter = logging.Formatter(
-        "%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s"
+        "%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d]-2s %(message)s"
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -256,11 +257,19 @@ def main_worker(rank, args):
     logger.info(model)
 
     # Initialize the model pretrained ImageNet weights
-    weights_before = model.encoder_q.backbone.layer1[0].conv1.weight[0, :4, :, :]
     model.encoder_q.backbone.init_weights()
     model.encoder_k.backbone.init_weights()
-    weights_after = model.encoder_q.backbone.layer1[0].conv1.weight[0, :4, :, :]
-    logger.info(f"{weights_before = }\n{weights_after = }")
+    # import copy
+    # # Initialize the model pretrained ImageNet weights
+    # weights_before_q = copy.deepcopy(model.encoder_q.backbone)
+    # model.encoder_q.backbone.init_weights()
+    # weights_after_q = copy.deepcopy(model.encoder_q.backbone)
+    # # print(f"{weights_before_q = }\n{weights_after_q = }")
+    # weights_before_k = copy.deepcopy(model.encoder_k.backbone)
+    # model.encoder_k.backbone.init_weights()
+    # weights_after_k = copy.deepcopy(model.encoder_k.backbone)
+    # # print(f"{weights_before_k = }\n{weights_after_k = }")
+    # print(f"{torch.all(weights_before_q.layer4[2].bn3.bias == weights_after_q.layer4[2].bn3.bias) = }")
 
     # wrap the model with DDP
     # device_ids tell DDP where is your model
