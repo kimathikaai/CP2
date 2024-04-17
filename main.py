@@ -18,6 +18,7 @@ import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
+import torchvision
 import torchvision.transforms as transforms
 import wandb
 # from mmcv.utils import Config
@@ -353,6 +354,14 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
         # mask_q = mask_q.cuda(args.gpu, non_blocking=True)
         # mask_k = mask_k.cuda(args.gpu, non_blocking=True)
 
+        # Visualize the first batch
+        if rank == 0 and epoch == 0 and i == 0:
+            log_imgs = torch.stack([images[0], images[1], bg0, bg1], dim=1).flatten(
+                0, 1
+            )
+            log_grid = torchvision.utils.make_grid(log_imgs, nrow=4, normalize=True)
+            wandb.log({"train-examples": wandb.Image(log_grid, caption="Forground Images, Background Images")})
+
         mask_q, mask_k = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
         image_q = images[0] * mask_q.unsqueeze(1) + bg0
         image_k = images[1] * mask_k.unsqueeze(1) + bg1
@@ -415,10 +424,9 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
                 "train/loss_dense": loss_d.avg,
                 "train/acc_ins": acc_ins.avg,
                 "train/acc_seg": acc_seg.avg,
-                "train/batch_time": batch_time.avg
+                "train/batch_time": batch_time.avg,
             }
         )
-
 
 
 def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
