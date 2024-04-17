@@ -1,4 +1,5 @@
 matplotlib
+wandb
 numpy
 prettytable
 codecov

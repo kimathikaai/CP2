@@ -19,6 +19,7 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
+import wandb
 # from mmcv.utils import Config
 from mmengine.config import Config
 from torch.nn.parallel import DistributedDataParallel
@@ -35,7 +36,10 @@ def get_args():
 
     parser.add_argument('--config', help='path to configuration file')
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
+
+    # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
+    parser.add_argument("--wandb_project", type=str, required=True, help='Wandb project name')
 
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data')
@@ -174,8 +178,22 @@ def prepare_data(rank, num_workers, args):
 
 def main_worker(rank, args):
     torch.cuda.set_device(rank)
-
     device = f"cuda:{rank}"
+
+    # initialize wandb for the main process
+    if rank == 0:
+        run = wandb.init(
+            name=args.run_id,
+            project=args.wandb_project,
+            save_dir=args.run_log_dir,
+        )
+        # Add hyperparameters to config
+        wandb.config.update({"hyper-parameters": args})
+        # define our custom x axis metric
+        wandb.define_metric("epoch")
+        # define which metrics will be plotted against it (e.g. all metrics
+        # under 'train')
+        wandb.define_metric("train/*", step_metric="epoch")
 
     # setup process groups
     setup(rank, args)
@@ -280,6 +298,7 @@ def main_worker(rank, args):
             epoch,
             args,
             device,
+            rank,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -300,7 +319,7 @@ def main_worker(rank, args):
     cleanup()
 
 
-def train(train_loader_list, model, criterion, optimizer, epoch, args, device):
+def train(train_loader_list, model, criterion, optimizer, epoch, args, device, rank):
     batch_time = AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
     loss_i = AverageMeter("Loss_ins", ":.4f")
@@ -315,6 +334,9 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device):
     )
 
     # cre_dense = nn.LogSoftmax(dim=1)
+
+    if rank == 0:
+        wandb.log("epoch", epoch)
 
     model.train()
 
@@ -385,6 +407,18 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device):
 
         if i % args.print_freq == 0:
             progress.display(i)
+
+    if rank == 0:
+        wandb.log(
+            {
+                "train/loss_ins": loss_i.avg,
+                "train/loss_dense": loss_d.avg,
+                "train/acc_ins": acc_ins.avg,
+                "train/acc_seg": acc_seg.avg,
+                "train/batch_time": batch_time.avg
+            }
+        )
+
 
 
 def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
@@ -466,9 +500,9 @@ if __name__ == "__main__":
     args = get_args()
 
     # create logging dir
-    log_path = os.path.join(args.log_dir, args.run_id)
-    os.mkdir(log_path)
-    print(f"{log_path = }")
+    args.run_log_dir = os.path.join(args.log_dir, args.run_id)
+    os.mkdir(args.run_log_dir)
+    print(f"{args.run_log_dir = }")
 
     # set seed
     if args.seed is not None:
