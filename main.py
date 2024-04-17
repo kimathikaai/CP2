@@ -191,10 +191,11 @@ def main_worker(rank, args):
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": args})
         # define our custom x axis metric
-        wandb.define_metric("epoch")
+        wandb.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
         # under 'train')
-        wandb.define_metric("train/*", step_metric="epoch")
+        wandb.define_metric("train/*", step_metric="step")
+        wandb.define_metric("epoch", step_metric="step")
 
     # setup process groups
     setup(rank, args)
@@ -283,6 +284,7 @@ def main_worker(rank, args):
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
+    step = 0
     for epoch in range(args.start_epoch, args.epochs):
         # When using DistributedSampler, we have to specify the epoch
         train_sampler.set_epoch(epoch)
@@ -290,8 +292,11 @@ def main_worker(rank, args):
         train_sampler_bg1.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
+        if rank==0:
+            wandb.log({"epoch":epoch})
+
         # train for one epoch
-        train(
+        step = train(
             [train_loader, train_loader_bg0, train_loader_bg1],
             model,
             criterion,
@@ -300,6 +305,7 @@ def main_worker(rank, args):
             args,
             device,
             rank,
+            step
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -320,7 +326,7 @@ def main_worker(rank, args):
     cleanup()
 
 
-def train(train_loader_list, model, criterion, optimizer, epoch, args, device, rank):
+def train(train_loader_list, model, criterion, optimizer, epoch, args, device, rank, step):
     batch_time = AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
     loss_i = AverageMeter("Loss_ins", ":.4f")
@@ -335,9 +341,6 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
     )
 
     # cre_dense = nn.LogSoftmax(dim=1)
-
-    if rank == 0:
-        wandb.log("epoch", epoch)
 
     model.train()
 
@@ -417,6 +420,19 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
         if i % args.print_freq == 0:
             progress.display(i)
 
+        if rank == 0:
+            wandb.log(
+                {
+                    "step": step,
+                    "train/loss_ins_step": loss_i.val,
+                    "train/loss_dense_step": loss_d.val,
+                    "train/acc_ins_step": acc_ins.val,
+                    "train/acc_seg_step": acc_seg.val,
+                    "train/batch_time_step": batch_time.val,
+                }
+            )
+        step += 1
+
     if rank == 0:
         wandb.log(
             {
@@ -427,6 +443,8 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
                 "train/batch_time": batch_time.avg,
             }
         )
+
+    return step
 
 
 def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
