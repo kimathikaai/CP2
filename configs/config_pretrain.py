@@ -1,5 +1,6 @@
 norm_cfg = dict(type='BN', requires_grad=True)
-pretrain_path = None    # Please set the path to pretrained weights for Quick Tuning
+pretrain_path = 'open-mmlab://resnet50'    # Please set the path to pretrained weights for Quick Tuning
+# pretrain_path = 'torchvision://resnet50'    # Please set the path to pretrained weights for Quick Tuning
 
 model = dict(
     type='EncoderDecoder',
@@ -14,6 +15,7 @@ model = dict(
         norm_cfg=norm_cfg,
         norm_eval=False,
         style='pytorch',
+        init_cfg=dict(type='Pretrained', checkpoint=pretrain_path),
         contract_dilation=True),
     decode_head=dict(
         type='ASPPHead',
