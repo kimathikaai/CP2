@@ -177,6 +177,19 @@ def prepare_data(rank, num_workers, args):
     )
 
 
+def setup_logger(rank, args):
+    logger = logging.getLogger(__name__ + f"-rank{rank}")
+    logger.setLevel(level=logging.INFO)
+    handler = logging.FileHandler(f"./log-rank{rank}.txt")
+    handler.setLevel(level=logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
+
+
 def main_worker(rank, args):
     torch.cuda.set_device(rank)
     device = f"cuda:{rank}"
@@ -194,7 +207,7 @@ def main_worker(rank, args):
     # then setting torch.backends.cudnn.benchmark = True might stall your execution.
     # Source: https://stackoverflow.com/questions/58961768/set-torch-backends-cudnn-benchmark-true-or-not
     # cudnn.benchmark = True
-    # Setting cudnn.deterministic as True will use the default algorithms, i.e., 
+    # Setting cudnn.deterministic as True will use the default algorithms, i.e.,
     # setting cudnn.benchmark as True will have no effect
     cudnn.deterministic = True
 
@@ -215,6 +228,8 @@ def main_worker(rank, args):
 
     # setup process groups
     setup(rank, args)
+    # get logger
+    logger = setup_logger(rank, args)
 
     #
     # Data
@@ -229,7 +244,7 @@ def main_worker(rank, args):
         (train_loader_bg0, train_sampler_bg0),
         (train_loader_bg1, train_sampler_bg1),
     ) = data_loaders
-    print(f"Initialized data loaders ({rank = })")
+    logger.info(f"Initialized data loaders ({rank = })")
 
     #
     # Model
@@ -238,8 +253,7 @@ def main_worker(rank, args):
     cfg = Config.fromfile(args.config)
     model = builder.CP2_MOCO(cfg)
     model.cuda(rank)
-    if rank == 0 and False:
-        print(model)
+    logger.info(model)
 
     # wrap the model with DDP
     # device_ids tell DDP where is your model
@@ -251,7 +265,7 @@ def main_worker(rank, args):
         output_device=rank,
         find_unused_parameters=True,
     )
-    print(f"Initialized the model ({rank = })")
+    logger.info(f"Initialized the model ({rank = })")
 
     #
     # Optimizers
@@ -268,15 +282,14 @@ def main_worker(rank, args):
     else:
         raise NotImplementedError("Only sgd and adamw optimizers are supported.")
 
-    print(f"Initialized optimizer ({rank = })")
+    logger.info(f"Initialized optimizer ({rank = })")
 
     criterion = nn.CrossEntropyLoss().to(device)
-
 
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            print("loading checkpoint '{}'".format(args.resume))
+            logger.info("loading checkpoint '{}'".format(args.resume))
             dist.barrier()
             # Map model to be loaded to specified single gpu.
             loc = "cuda:{}".format(rank)
@@ -284,13 +297,13 @@ def main_worker(rank, args):
             args.start_epoch = checkpoint["epoch"]
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
-            print(
+            logger.info(
                 "=> loaded checkpoint '{}' (epoch {})".format(
                     args.resume, checkpoint["epoch"]
                 )
             )
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            logger.info("=> no checkpoint found at '{}'".format(args.resume))
 
     step = 0
     for epoch in range(args.start_epoch, args.epochs):
@@ -300,8 +313,8 @@ def main_worker(rank, args):
         train_sampler_bg1.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, args)
 
-        if rank==0:
-            wandb.log({"epoch":epoch})
+        if rank == 0:
+            wandb.log({"epoch": epoch})
 
         # train for one epoch
         step = train(
@@ -313,7 +326,8 @@ def main_worker(rank, args):
             args,
             device,
             rank,
-            step
+            step,
+            logger,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -334,7 +348,18 @@ def main_worker(rank, args):
     cleanup()
 
 
-def train(train_loader_list, model, criterion, optimizer, epoch, args, device, rank, step):
+def train(
+    train_loader_list,
+    model,
+    criterion,
+    optimizer,
+    epoch,
+    args,
+    device,
+    rank,
+    step,
+    logger,
+):
     batch_time = AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
     loss_i = AverageMeter("Loss_ins", ":.4f")
@@ -345,6 +370,7 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, loss_i, loss_d, acc_ins, acc_seg],
+        logger=logger,
         prefix="Epoch: [{}]".format(epoch),
     )
 
@@ -371,11 +397,17 @@ def train(train_loader_list, model, criterion, optimizer, epoch, args, device, r
 
         # Visualize the first batch
         if rank == 0 and epoch == 0 and i == 0:
-            log_imgs = torch.stack([images[0], images[1], bg0, bg1, image_q, image_k], dim=1).flatten(
-                0, 1
-            )
+            log_imgs = torch.stack(
+                [images[0], images[1], bg0, bg1, image_q, image_k], dim=1
+            ).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=6, normalize=True)
-            wandb.log({"train-examples": wandb.Image(log_grid, caption="Forground Images, Background Images")})
+            wandb.log(
+                {
+                    "train-examples": wandb.Image(
+                        log_grid, caption="Forground Images, Background Images"
+                    )
+                }
+            )
 
         # compute output
         stride = args.output_stride
@@ -487,17 +519,18 @@ class AverageMeter(object):
 
 
 class ProgressMeter(object):
-    def __init__(self, num_batches, meters, prefix=""):
+    def __init__(self, num_batches, meters, logger, prefix=""):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
         self.meters = meters
         self.prefix = prefix
+        self.logger = logger
 
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
-        print("    ".join(entries))
+        self.logger.info("    ".join(entries))
         if torch.distributed.get_rank() == 0:
-            print("\t".join(entries))
+            self.logger.info("\t".join(entries))
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
