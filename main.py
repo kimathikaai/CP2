@@ -1,6 +1,6 @@
 import argparse
-import copy
 import builtins
+import copy
 import logging
 import math
 import os
@@ -143,13 +143,13 @@ def prepare_data(rank, num_workers, args):
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
-        directory_type=args.dataset_type
+        directory_type=args.dataset_type,
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=transforms.Compose(augmentation_bg),
-        directory_type=args.dataset_type
+        directory_type=args.dataset_type,
     )
 
     def get_dataloader(dataset, seed):
@@ -384,6 +384,7 @@ def train(
 ):
     batch_time = AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
+    loss_o = AverageMeter("Loss_overall", ":.4f")
     loss_i = AverageMeter("Loss_ins", ":.4f")
     loss_d = AverageMeter("Loss_den", ":.4f")
     acc_ins = AverageMeter("Acc_ins", ":6.2f")
@@ -391,7 +392,7 @@ def train(
     train_loader, train_loader_bg0, train_loader_bg1 = train_loader_list
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, loss_i, loss_d, acc_ins, acc_seg],
+        [batch_time, loss_o, loss_i, loss_d, acc_ins, acc_seg],
         logger=logger,
         prefix="Epoch: [{}]".format(epoch),
     )
@@ -465,6 +466,7 @@ def train(
             .mean()
             * 100.0
         )
+        loss_o.update(loss.item(), images[0].size(0))
         loss_i.update(loss_instance.item(), images[0].size(0))
         loss_d.update(loss_dense.item(), images[0].size(0))
         acc_ins.update(acc1[0], images[0].size(0))
@@ -486,6 +488,7 @@ def train(
             wandb.log(
                 {
                     "step": step,
+                    "train/loss_step": loss_o.val,
                     "train/loss_ins_step": loss_i.val,
                     "train/loss_dense_step": loss_d.val,
                     "train/acc_ins_step": acc_ins.val,
@@ -498,6 +501,7 @@ def train(
     if rank == 0:
         wandb.log(
             {
+                "train/loss": loss_o.avg,
                 "train/loss_ins": loss_i.avg,
                 "train/loss_dense": loss_d.avg,
                 "train/acc_ins": acc_ins.avg,
