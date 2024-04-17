@@ -177,6 +177,14 @@ def main_worker(rank, args):
 
     device = f"cuda:{rank}"
 
+    # configure logger
+    logging.basicConfig(
+        format=f"[%(levelname)][{device}][%(filename)s] %(message)s",
+        datefmt="%Y-%m-%d:%H:%M:%S",
+        level=logging.INFO,
+    )
+
+
     # setup process groups
     setup(rank, args)
 
@@ -464,13 +472,6 @@ def accuracy(output, target, topk=(1,)):
 if __name__ == "__main__":
     # parse command line
     args = get_args()
-
-    # set logger
-    logging.basicConfig(
-        format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s",
-        datefmt="%Y-%m-%d:%H:%M:%S",
-        level=logging.INFO,
-    )
 
     # create logging dir
     log_path = os.path.join(args.log_dir, args.run_id)
