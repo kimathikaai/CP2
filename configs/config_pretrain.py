@@ -1,4 +1,4 @@
-norm_cfg = dict(type='SyncBN', requires_grad=True)
+norm_cfg = dict(type='BN', requires_grad=True)
 # pretrain_path = 'open-mmlab://resnet50'    # Please set the path to pretrained weights for Quick Tuning
 pretrain_path = 'torchvision://resnet50'    # Please set the path to pretrained weights for Quick Tuning
 
