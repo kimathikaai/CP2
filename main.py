@@ -186,7 +186,7 @@ def main_worker(rank, args):
         run = wandb.init(
             name=args.run_id,
             project=args.wandb_project,
-            save_dir=args.run_log_dir,
+            dir=args.run_log_dir,
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": args})
