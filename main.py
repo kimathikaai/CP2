@@ -255,6 +255,13 @@ def main_worker(rank, args):
     model.cuda(rank)
     logger.info(model)
 
+    # Initialize the model pretrained ImageNet weights
+    weights_before = model.encoder_q.backbone.layer1[0].conv1.weight[0, :4, :, :]
+    model.encoder_q.backbone.init_weights()
+    model.encoder_k.backbone.init_weights()
+    weights_after = model.encoder_q.backbone.layer1[0].conv1.weight[0, :4, :, :]
+    logger.info(f"{weights_before = }\n{weights_after = }")
+
     # wrap the model with DDP
     # device_ids tell DDP where is your model
     # output_device tells DDP where to output, in our case, it is rank
