@@ -4,7 +4,7 @@ pretrain_path = 'open-mmlab://resnet50'    # Please set the path to pretrained w
 
 model = dict(
     type='EncoderDecoder',
-    pretrained=pretrain_path,
+    # pretrained=pretrain_path,
     backbone=dict(
         type='ResNet',
         depth=50,
