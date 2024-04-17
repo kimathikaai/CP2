@@ -195,7 +195,6 @@ def main_worker(rank, args):
         # define which metrics will be plotted against it (e.g. all metrics
         # under 'train')
         wandb.define_metric("train/*", step_metric="step")
-        wandb.define_metric("epoch", step_metric="step")
 
     # setup process groups
     setup(rank, args)
@@ -254,7 +253,7 @@ def main_worker(rank, args):
 
     print(f"Initialized optimizer ({rank = })")
 
-    criterion = nn.CrossEntropyLoss().cuda(rank)
+    criterion = nn.CrossEntropyLoss().to(device)
 
     # If your model does not change and your input sizes remain the same
     # - then you may benefit from setting torch.backends.cudnn.benchmark = True.
