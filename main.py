@@ -180,7 +180,7 @@ def prepare_data(rank, num_workers, args):
 def setup_logger(rank, args):
     logger = logging.getLogger(__name__ + f"-rank{rank}")
     logger.setLevel(level=logging.INFO)
-    handler = logging.FileHandler(f"./log-rank{rank}.txt")
+    handler = logging.FileHandler(os.path.join(args.run_log_dir, f"log-rank{rank}.txt"))
     handler.setLevel(level=logging.INFO)
     formatter = logging.Formatter(
         "%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s"
