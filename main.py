@@ -179,7 +179,7 @@ def main_worker(rank, args):
 
     # configure logger
     logging.basicConfig(
-        format=f"[%(levelname)][{device}][%(filename)s] %(message)s",
+        format=f"[%(levelname)] {device} [%(filename)s] %(message)s",
         datefmt="%Y-%m-%d:%H:%M:%S",
         level=logging.INFO,
     )
@@ -210,7 +210,7 @@ def main_worker(rank, args):
     cfg = Config.fromfile(args.config)
     model = builder.CP2_MOCO(cfg)
     model.cuda(rank)
-    if rank == 0:
+    if rank == 0 and False:
         logging.info(model)
 
     # wrap the model with DDP
@@ -477,6 +477,13 @@ if __name__ == "__main__":
     log_path = os.path.join(args.log_dir, args.run_id)
     os.mkdir(log_path)
     logging.info(f"{log_path = }")
+
+    # set logger
+    logging.basicConfig(
+        format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s",
+        datefmt="%Y-%m-%d:%H:%M:%S",
+        level=logging.INFO,
+    )
 
     # set seed
     if args.seed is not None:
