@@ -1,6 +1,7 @@
 import csv
 import logging
 import os
+from enum import Enum
 from glob import glob
 from pathlib import Path
 from typing import List
@@ -8,6 +9,15 @@ from typing import List
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import ImageFolder
+
+
+class DatasetType(Enum):
+    """
+    Used to differentiate between expected data structures
+    """
+
+    CUSTOM = 0
+    CLASSIFICATION = 1
 
 
 def pil_loader(path: str) -> Image.Image:
@@ -72,16 +82,9 @@ class PretrainDataset(Dataset):
         return sample
 
 
-def get_pretrain_dataset(
+def get_custom_pretrain_dataset(
     image_directory_list: List[str], image_csv_list: List[str], transform
 ):
-    """
-    Returns an initialized PretrainDataset
-    """
-    # Get the full paths
-    image_directory_list = [
-        os.path.abspath(os.path.expanduser(x)) for x in image_directory_list
-    ]
     image_csv_list = [os.path.abspath(os.path.expanduser(x)) for x in image_csv_list]
     logging.info(
         f"[info] Loading image from\n{image_directory_list}\naccording to\n {image_csv_list}"
@@ -114,3 +117,43 @@ def get_pretrain_dataset(
     assert len(_sample_paths) == len(included_samples_stems)
 
     return PretrainDataset(_sample_paths, transform)
+
+
+def get_classification_pretrain_dataset(image_directory_list: List[str], transform):
+    # validate directory existence and get images
+    sample_paths = []
+    for img_dir in image_directory_list:
+        assert os.path.exists(img_dir), "DNE: {}".format(img_dir)
+        files = glob(os.path.join(img_dir, "*"))
+        sample_paths.extend(files)
+    # sort based on file names
+    sample_paths = sorted(sample_paths, key=lambda x: Path(x).stem)
+    logging.info(f"Found {len(sample_paths) = } images")
+
+    # assert that no files share the same name
+    sample_names = [Path(x).stem for x in sample_paths]
+    assert len(sample_names) == len(set(sample_names))
+
+    return PretrainDataset(sample_paths, transform)
+
+
+def get_pretrain_dataset(
+    image_directory_list: List[str],
+    image_csv_list: List[str],
+    directory_type: DatasetType,
+    transform,
+):
+    """
+    Returns an initialized PretrainDataset
+    """
+    # Get the full paths
+    image_directory_list = [
+        os.path.abspath(os.path.expanduser(x)) for x in image_directory_list
+    ]
+
+    if directory_type == DatasetType.CUSTOM:
+        return get_custom_pretrain_dataset(
+            image_directory_list, image_csv_list, transform
+        )
+    elif directory_type == DatasetType.CLASSIFICATION:
+        return get_classification_pretrain_dataset(image_directory_list, transform)

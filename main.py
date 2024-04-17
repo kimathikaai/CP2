@@ -8,6 +8,7 @@ import random
 import shutil
 import time
 from datetime import datetime
+from enum import Enum
 
 import numpy as np
 import torch
@@ -29,7 +30,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import builder
 import loader
-from datasets.pretrain_dataset import get_pretrain_dataset
+from datasets.pretrain_dataset import DatasetType, get_pretrain_dataset
 
 
 def get_args():
@@ -44,7 +45,8 @@ def get_args():
     parser.add_argument("--wandb_project", type=str, required=True, help='Wandb project name')
 
     # Data
-    parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data')
+    parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
+    parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], required=True)
     parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
     parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
     parser.add_argument("--test_csv_path", nargs="+", help="CSVs with test data paths")
@@ -91,6 +93,8 @@ def get_args():
     # fmt: on
 
     args = parser.parse_args()
+    # convert to enum
+    args.dataset_type = DatasetType[args.dataset_type]
 
     return args
 
@@ -139,11 +143,13 @@ def prepare_data(rank, num_workers, args):
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
+        directory_type=args.dataset_type
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=transforms.Compose(augmentation_bg),
+        directory_type=args.dataset_type
     )
 
     def get_dataloader(dataset, seed):
