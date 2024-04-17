@@ -73,7 +73,7 @@ def get_args():
                         metavar='N', help='print frequency (default: 10)')
     parser.add_argument('--scalar-freq', default=100, type=int,
                         help='metrics writing frequency')
-    parser.add_argument('--ckpt-freq', default=1, type=int,
+    parser.add_argument('--ckpt-freq', default=10, type=int,
                         help='checkpoint saving frequency')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none)')
@@ -177,14 +177,6 @@ def main_worker(rank, args):
 
     device = f"cuda:{rank}"
 
-    # configure logger
-    logging.basicConfig(
-        format=f"[%(levelname)] {device} [%(filename)s] %(message)s",
-        datefmt="%Y-%m-%d:%H:%M:%S",
-        level=logging.INFO,
-    )
-
-
     # setup process groups
     setup(rank, args)
 
@@ -201,7 +193,7 @@ def main_worker(rank, args):
         (train_loader_bg0, train_sampler_bg0),
         (train_loader_bg1, train_sampler_bg1),
     ) = data_loaders
-    logging.info(f"Initialized data loaders ({rank = })")
+    print(f"Initialized data loaders ({rank = })")
 
     #
     # Model
@@ -211,7 +203,7 @@ def main_worker(rank, args):
     model = builder.CP2_MOCO(cfg)
     model.cuda(rank)
     if rank == 0 and False:
-        logging.info(model)
+        print(model)
 
     # wrap the model with DDP
     # device_ids tell DDP where is your model
@@ -223,7 +215,7 @@ def main_worker(rank, args):
         output_device=rank,
         find_unused_parameters=True,
     )
-    logging.info(f"Initialized the model ({rank = })")
+    print(f"Initialized the model ({rank = })")
 
     #
     # Optimizers
@@ -240,7 +232,7 @@ def main_worker(rank, args):
     else:
         raise NotImplementedError("Only sgd and adamw optimizers are supported.")
 
-    logging.info(f"Initialized optimizer ({rank = })")
+    print(f"Initialized optimizer ({rank = })")
 
     criterion = nn.CrossEntropyLoss().cuda(rank)
 
@@ -256,7 +248,7 @@ def main_worker(rank, args):
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            logging.info("loading checkpoint '{}'".format(args.resume))
+            print("loading checkpoint '{}'".format(args.resume))
             dist.barrier()
             # Map model to be loaded to specified single gpu.
             loc = "cuda:{}".format(rank)
@@ -264,13 +256,13 @@ def main_worker(rank, args):
             args.start_epoch = checkpoint["epoch"]
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
-            logging.info(
+            print(
                 "=> loaded checkpoint '{}' (epoch {})".format(
                     args.resume, checkpoint["epoch"]
                 )
             )
         else:
-            logging.info("=> no checkpoint found at '{}'".format(args.resume))
+            print("=> no checkpoint found at '{}'".format(args.resume))
 
     for epoch in range(args.start_epoch, args.epochs):
         # When using DistributedSampler, we have to specify the epoch
@@ -435,9 +427,9 @@ class ProgressMeter(object):
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
-        logging.info("    ".join(entries))
+        print("    ".join(entries))
         if torch.distributed.get_rank() == 0:
-            logging.info("\t".join(entries))
+            print("\t".join(entries))
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
@@ -476,14 +468,7 @@ if __name__ == "__main__":
     # create logging dir
     log_path = os.path.join(args.log_dir, args.run_id)
     os.mkdir(log_path)
-    logging.info(f"{log_path = }")
-
-    # set logger
-    logging.basicConfig(
-        format="%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] %(message)s",
-        datefmt="%Y-%m-%d:%H:%M:%S",
-        level=logging.INFO,
-    )
+    print(f"{log_path = }")
 
     # set seed
     if args.seed is not None:
@@ -492,12 +477,12 @@ if __name__ == "__main__":
         np.random.seed(args.seed)
         cudnn.deterministic = True
 
-    logging.info(f"{torch.cuda.device_count() = }")
+    print(f"{torch.cuda.device_count() = }")
     assert args.world_size <= torch.cuda.device_count()
 
     # get the number of workers
     args.num_workers_per_dataset = args.num_workers // (args.world_size * 3)
-    logging.info(f"{args.num_workers_per_dataset = }")
+    print(f"{args.num_workers_per_dataset = }")
 
     # spawn parallel process
     mp.spawn(main_worker, args=[args], nprocs=args.world_size)
