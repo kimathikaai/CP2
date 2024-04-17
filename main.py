@@ -185,6 +185,7 @@ def main_worker(rank, args):
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
     # If your model does not change and your input sizes remain the same
     # - then you may benefit from setting torch.backends.cudnn.benchmark = True.
     # However, if your model changes: for instance, if you have layers that
@@ -192,10 +193,10 @@ def main_worker(rank, args):
     # layers inside a loop that can be iterated a different number of times,
     # then setting torch.backends.cudnn.benchmark = True might stall your execution.
     # Source: https://stackoverflow.com/questions/58961768/set-torch-backends-cudnn-benchmark-true-or-not
-    cudnn.benchmark = True
+    # cudnn.benchmark = True
     # Setting cudnn.deterministic as True will use the default algorithms, i.e., 
     # setting cudnn.benchmark as True will have no effect
-    # cudnn.deterministic = True
+    cudnn.deterministic = True
 
     # initialize wandb for the main process
     if rank == 0:
