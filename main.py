@@ -94,7 +94,7 @@ def get_args():
 
     args = parser.parse_args()
     # convert to enum
-    args.dataset_type = DatasetType[args.dataset_type]
+    args.directory_type = DatasetType[args.directory_type]
 
     return args
 
@@ -143,13 +143,13 @@ def prepare_data(rank, num_workers, args):
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
-        directory_type=args.dataset_type,
+        directory_type=args.directory_type,
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=transforms.Compose(augmentation_bg),
-        directory_type=args.dataset_type,
+        directory_type=args.directory_type,
     )
 
     def get_dataloader(dataset, seed):
