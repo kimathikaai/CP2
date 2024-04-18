@@ -226,7 +226,7 @@ def main_worker(rank, args):
             dir=args.run_log_dir,
         )
         # Add hyperparameters to config
-        wandb.config.update({"hyper-parameters": args})
+        wandb.config.update({"hyper-parameters": vars(args)})
         # define our custom x axis metric
         wandb.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
