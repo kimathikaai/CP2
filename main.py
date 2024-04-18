@@ -218,20 +218,26 @@ def main_worker(rank, args):
     # setting cudnn.benchmark as True will have no effect
     cudnn.deterministic = True
 
+    # get configuration file
+    cfg = Config.fromfile(args.config)
+
     # initialize wandb for the main process
     if rank == 0:
         run = wandb.init(
             name=args.run_id,
             project=args.wandb_project,
             dir=args.run_log_dir,
+            tags=['pretrain']
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
+        wandb.config.update({"config_file": cfg})
         # define our custom x axis metric
         wandb.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
         # under 'train')
         wandb.define_metric("train/*", step_metric="step")
+        wandb.define_metric("learning_rate", step_metric="step")
 
     # setup process groups
     setup(rank, args)
@@ -257,7 +263,6 @@ def main_worker(rank, args):
     # Model
     #
     # instantiate the model(it's your own model) and move it to the right device
-    cfg = Config.fromfile(args.config)
     model = builder.CP2_MOCO(cfg)
     model.cuda(rank)
     logger.info(model)
@@ -333,10 +338,11 @@ def main_worker(rank, args):
         train_sampler.set_epoch(epoch)
         train_sampler_bg0.set_epoch(epoch)
         train_sampler_bg1.set_epoch(epoch)
-        adjust_learning_rate(optimizer, epoch, args)
+        lr = adjust_learning_rate(optimizer, epoch, args)
 
         if rank == 0:
             wandb.log({"epoch": epoch})
+            wandb.log({"learning_rate": lr})
 
         # train for one epoch
         step = train(
@@ -569,6 +575,7 @@ def adjust_learning_rate(optimizer, epoch, args):
     lr *= 0.5 * (1.0 + math.cos(math.pi * epoch / args.epochs))
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr
+    return lr
 
 
 def accuracy(output, target, topk=(1,)):
