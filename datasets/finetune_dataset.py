@@ -6,6 +6,7 @@ import albumentations as A
 import cv2
 import lightning as L
 import numpy as np
+import torch
 from mmcv import image
 from pretrain_dataset import pil_image_loader, pil_mask_loader
 from scipy.ndimage import interpolation
@@ -19,10 +20,11 @@ class SegmentationDataset(Dataset):
     Base dataset for fine-tuning
     """
 
-    def __init__(self, image_mask_paths, transform=None):
+    def __init__(self, image_mask_paths, transform, num_classes):
         super().__init__()
         self.image_mask_paths = image_mask_paths
         self.transform = transform
+        self.num_classes = num_classes
 
     def __len__(self):
         return len(self.image_mask_paths)
@@ -36,6 +38,10 @@ class SegmentationDataset(Dataset):
             aug = self.transform(image=image, mask=mask)
             image, mask = aug["image"], aug["mask"]
 
+        if self.num_classes == 2:
+            # Binarize detection mask
+            mask = torch.tensor(mask, dtype=torch.bool)
+
         return image, mask
 
 
@@ -46,6 +52,7 @@ class SegmentationDataModule(L.LightningDataModule):
         mask_directory: str,
         batch_size: int,
         num_workers: int,
+        num_classes: int,
         image_width: float,
         image_height: float,
     ) -> None:
@@ -73,6 +80,7 @@ class SegmentationDataModule(L.LightningDataModule):
         # dataloading
         self.num_workers = num_workers
         self.batch_size = batch_size
+        self.num_classes = num_classes
 
         # Get images
         self.image_paths = sorted(glob(os.path.join(self.image_directory, "*")))
@@ -89,15 +97,17 @@ class SegmentationDataModule(L.LightningDataModule):
             )
             self.image_mask_paths.append((img, mask))
 
-    def setup(self, stage: str) -> None:
+        self.setup()
+
+    def setup(self, stage=None) -> None:
         self.dataset_train = SegmentationDataset(
-            self.train_image_mask_paths, self.transform_train
+            self.train_image_mask_paths, self.transform_train, self.num_classes
         )
         self.dataset_val = SegmentationDataset(
-            self.val_image_mask_paths, self.transform_val
+            self.val_image_mask_paths, self.transform_val, self.num_classes
         )
         self.dataset_test = SegmentationDataset(
-            self.test_image_mask_paths, self.transform_test
+            self.test_image_mask_paths, self.transform_test, self.num_classes
         )
 
     def train_dataloader(self):
@@ -138,6 +148,7 @@ class GLASDataModule(SegmentationDataModule):
         mask_directory: str,
         batch_size: int,
         num_workers: int,
+        num_classes: int,
         image_size: int,
         train_data_ratio: float,
     ) -> None:
@@ -146,6 +157,7 @@ class GLASDataModule(SegmentationDataModule):
             mask_directory,
             batch_size,
             num_workers,
+            num_classes,
             image_size,
             image_size,
         )
