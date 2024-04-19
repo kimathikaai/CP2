@@ -1,5 +1,8 @@
 matplotlib
 wandb
+albumentations
+lightning
+python-dotenv
 numpy
 prettytable
 codecov

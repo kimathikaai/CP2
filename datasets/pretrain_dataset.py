@@ -8,7 +8,6 @@ from typing import List
 
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torchvision.datasets import ImageFolder
 
 
 class DatasetType(Enum):
@@ -20,11 +19,17 @@ class DatasetType(Enum):
     CLASSIFICATION = 1
 
 
-def pil_loader(path: str) -> Image.Image:
+def pil_image_loader(path: str) -> Image.Image:
     # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
     with open(path, "rb") as f:
         img = Image.open(f)
         return img.convert("RGB")
+
+def pil_mask_loader(path: str) -> Image.Image:
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    with open(path, "rb") as f:
+        img = Image.open(f)
+        return img.convert("L")
 
 
 def read_paths_csv(csv_path: str) -> List[str]:
@@ -76,7 +81,7 @@ class PretrainDataset(Dataset):
 
     def __getitem__(self, index):
         path = self.images_list[index]
-        sample = pil_loader(path)
+        sample = pil_image_loader(path)
         if self.transform is not None:
             sample = self.transform(sample)
         return sample
