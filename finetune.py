@@ -78,7 +78,7 @@ class CustomCallback(Callback):
             masks = self.masks.to(model.device)
             with torch.no_grad():
                 model.eval()
-                masks_pred = model(images)
+                _, masks_pred = model(images)
                 model.train()
 
             # Plot one image for now

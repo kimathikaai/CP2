@@ -47,11 +47,7 @@ class SegmentationModule(L.LightningModule):
         )
 
     def forward(self, images):
-        return self.model(images)
-
-    def shared_step(self, batch, stage):
-        images, masks = batch
-        logits = self.forward(images)
+        logits = self.model(images)
 
         # resize from 32 -> 512
         logits = resize(
@@ -60,17 +56,19 @@ class SegmentationModule(L.LightningModule):
             mode="bilinear",
             align_corners=False,
         )
-
-        loss = self.loss(logits, masks)
-
         argmax_logits = logits.argmax(dim=1)
+
+        return logits, argmax_logits
+
+    def shared_step(self, batch, stage):
+        images, masks = batch
+        logits, argmax_logits = self.forward(images)
+        loss = self.loss(logits, masks)
 
         if stage == "train":
             self.train_micro_iou.update(argmax_logits, masks)
             self.log("train_loss", loss, sync_dist=True, on_epoch=True)
-            self.log(
-                "train_micro_iou", self.train_micro_iou, on_epoch=True
-            )
+            self.log("train_micro_iou", self.train_micro_iou, on_epoch=True)
         elif stage == "val":
             self.val_micro_iou.update(argmax_logits, masks)
             self.log("val_loss", loss, sync_dist=True, on_epoch=True)
