@@ -186,6 +186,7 @@ def main(args):
     # Test the model
     #
     if trainer.global_rank == 0:
+        torch.distributed.destroy_process_group()
         # Setup a test trainer
         test_trainer = L.Trainer(
             devices=1,
