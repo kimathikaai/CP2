@@ -43,7 +43,7 @@ class SegmentationDataset(Dataset):
             # Binarize detection mask
             mask = np.array(mask, dtype=bool)
 
-        return self.to_tensor(image), torch.Tensor(mask)
+        return self.to_tensor(image), torch.from_numpy(mask).long()
 
 
 class SegmentationDataModule(L.LightningDataModule):
