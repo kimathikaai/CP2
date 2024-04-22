@@ -8,7 +8,7 @@ import lightning as L
 import numpy as np
 import torch
 from mmcv import image
-from pretrain_dataset import pil_image_loader, pil_mask_loader
+from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
 from scipy.ndimage import interpolation
 from torch.utils.data import DataLoader, Dataset
 
