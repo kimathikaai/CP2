@@ -67,18 +67,18 @@ class SegmentationModule(L.LightningModule):
 
         if stage == "train":
             self.train_micro_iou.update(argmax_logits, masks)
-            self.log("train_loss", loss, sync_dist=True, on_step=True, on_epoch=True)
+            self.log("train_loss", loss, sync_dist=True, on_epoch=True)
             self.log(
-                "train_micro_iou", self.train_micro_iou, on_step=True, on_epoch=True
+                "train_micro_iou", self.train_micro_iou, on_epoch=True
             )
         elif stage == "val":
             self.val_micro_iou.update(argmax_logits, masks)
-            self.log("val_loss", loss, sync_dist=True, on_step=True, on_epoch=True)
-            self.log("val_micro_iou", self.val_micro_iou, on_step=True, on_epoch=True)
+            self.log("val_loss", loss, sync_dist=True, on_epoch=True)
+            self.log("val_micro_iou", self.val_micro_iou, on_epoch=True)
         elif stage == "test":
             self.test_micro_iou.update(argmax_logits, masks)
-            self.log("test_loss", loss, sync_dist=True, on_step=True, on_epoch=True)
-            self.log("test_micro_iou", self.test_micro_iou, on_step=True, on_epoch=True)
+            self.log("test_loss", loss, sync_dist=True, on_epoch=True)
+            self.log("test_micro_iou", self.test_micro_iou, on_epoch=True)
         else:
             raise NotImplementedError(f"{stage = }")
 
