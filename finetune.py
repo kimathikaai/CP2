@@ -148,6 +148,7 @@ def main(args):
     if args.pretrain_path is not None:
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
 
+    cfg.model.decoder_head.num_classes = args.num_classes
     model = SegmentationModule(
         model_config=cfg,
         learning_rate=args.learning_rate,
