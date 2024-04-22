@@ -32,8 +32,8 @@ class SegmentationDataset(Dataset):
 
     def __getitem__(self, index):
         image_path, mask_path = self.image_mask_paths[index]
-        image = pil_image_loader(image_path)
-        mask = pil_mask_loader(mask_path)
+        image = np.array(pil_image_loader(image_path))
+        mask = np.array(pil_mask_loader(mask_path))
 
         if self.transform is not None:
             aug = self.transform(image=image, mask=mask)
