@@ -83,10 +83,10 @@ class CustomCallback(Callback):
 
             # Plot one image for now
             mask_img = wandb.Image(
-                images[0].item(),
+                images[0].cpu().detach().numpy(),
                 masks={
-                    "predictions": {"mask_data": masks_pred[0].item()},
-                    "ground_truth": {"mask_data": masks[0].item()},
+                    "predictions": {"mask_data": masks_pred[0].cpu().detach().numpy()},
+                    "ground_truth": {"mask_data": masks[0].cpu().detach().numpy()},
                 },
             )
             wandb.log({"Predictions/Augmentations": mask_img})
