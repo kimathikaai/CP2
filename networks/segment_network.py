@@ -1,18 +1,23 @@
 import lightning as L
 import torch
 import torch.nn as nn
-from lightning.fabric.utilities.rank_zero import rank_zero_only
+from mmseg.models import build_segmentor
 from torchmetrics import JaccardIndex
 
 BACKGROUND_CLASS = 0
 
 
 class SegmentationModule(L.LightningModule):
-    def __init__(self, model, learning_rate, weight_decay, num_classes, image_shape):
+    def __init__(
+        self, model_config, learning_rate, weight_decay, num_classes, image_shape
+    ):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = model
+        # Initialize the model
+        self.model = build_segmentor(model_config.model)
+        self.model.backbone.init_weights()
+
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.num_classes = num_classes

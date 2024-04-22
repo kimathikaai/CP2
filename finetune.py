@@ -12,7 +12,6 @@ from lightning.pytorch.loggers import WandbLogger
 from mmengine.config import Config
 from mmseg.models import build_segmentor
 
-import builder
 from datasets.finetune_dataset import GLASDataModule
 from networks.segment_network import SegmentationModule
 
@@ -115,7 +114,7 @@ def main(args):
 
     # logging directory
     args.run_dir = os.path.join(args.log_dir, args.run_id)
-    os.mkdir(args.run_dir)
+    os.makedirs(args.run_dir, exist_ok=True)
 
     # setup callbacks
     lr_callback = LearningRateMonitor("epoch")
@@ -149,11 +148,8 @@ def main(args):
     if args.pretrain_path is not None:
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
 
-    model = build_segmentor(cfg.model)
-    model.backbone.init_weights()
-
-    module = SegmentationModule(
-        model=model,
+    model = SegmentationModule(
+        model_config=cfg,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
@@ -176,14 +172,14 @@ def main(args):
 
     # log additional parameters
     if trainer.global_rank == 0:
-        wandb_logger.watch(module, log="all", log_graph=True)
+        wandb_logger.watch(model, log="all", log_graph=True)
         wandb_logger.experiment.config.update({"hyper-parameters": vars(args)})
 
     # Train
-    trainer.fit(module, datamodule=datamodule)
+    trainer.fit(model, datamodule=datamodule)
 
     # The watch method adds hooks to the model which can be removed at the end of training
-    wandb_logger.experiment.unwatch(module)
+    wandb_logger.experiment.unwatch(model)
 
     #
     # Test the model
@@ -200,7 +196,7 @@ def main(args):
 
         print(f"{checkpoint_callback.best_model_path = }")
         test_trainer.test(
-            module,
+            model,
             datamodule=datamodule,
             ckpt_path=checkpoint_callback.best_model_path,
         )
