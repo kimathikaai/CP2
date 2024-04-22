@@ -41,9 +41,9 @@ class SegmentationDataset(Dataset):
 
         if self.num_classes == 2:
             # Binarize detection mask
-            mask = torch.tensor(mask, dtype=torch.bool)
+            mask = np.array(mask, dtype=bool)
 
-        return image, mask
+        return torch.Tensor(image), torch.Tensor(mask)
 
 
 class SegmentationDataModule(L.LightningDataModule):
@@ -223,7 +223,6 @@ class GLASDataModule(SegmentationDataModule):
                 ),
                 A.GridDistortion(p=0.2),
                 A.GaussNoise(p=0.5),
-                A.ToTensorV2(),
             ]
         )
         self.transform_val = A.Compose(
@@ -238,7 +237,6 @@ class GLASDataModule(SegmentationDataModule):
                 ),
                 A.HorizontalFlip(),
                 A.VerticalFlip(),
-                A.ToTensorV2(),
             ]
         )
         self.transform_test = A.Compose(
@@ -251,6 +249,5 @@ class GLASDataModule(SegmentationDataModule):
                 A.CenterCrop(
                     height=self.image_size, width=self.image_size, always_apply=True
                 ),
-                A.ToTensorV2(),
             ]
         )
