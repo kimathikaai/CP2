@@ -1,11 +1,10 @@
 # model settings
 norm_cfg = dict(type='SyncBN', requires_grad=True)
-pretrain_path = ''    # Please set the path to pretrained model
-data_root = ''      # Please set the path to your finetuing dataset (PASCAL VOC 2012)
+pretrain_path = 'torchvision://resnet50'    # Please set the path to pretrained model
+# data_root = ''      # Please set the path to your finetuing dataset (PASCAL VOC 2012)
 
 model = dict(
     type='EncoderDecoder',
-    pretrained=pretrain_path,
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -16,6 +15,7 @@ model = dict(
         norm_cfg=norm_cfg,
         norm_eval=False,
         style='pytorch',
+        init_cfg=dict(type='Pretrained', checkpoint=pretrain_path),
         contract_dilation=True),
     decode_head=dict(
         type='ASPPHead',
