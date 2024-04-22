@@ -2,6 +2,7 @@ import lightning as L
 import torch
 import torch.nn as nn
 from mmseg.models import build_segmentor
+from mmseg.models.utils import resize
 from torchmetrics import JaccardIndex
 
 BACKGROUND_CLASS = 0
@@ -51,6 +52,15 @@ class SegmentationModule(L.LightningModule):
     def shared_step(self, batch, stage):
         images, masks = batch
         logits = self.forward(images)
+
+        # resize from 32 -> 512
+        logits = resize(
+            input=logits,
+            size=self.image_shape[1:],
+            mode="bilinear",
+            align_corners=False,
+        )
+
         loss = self.loss(logits, masks)
 
         argmax_logits = logits.argmax(dim=1)
