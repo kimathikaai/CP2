@@ -149,9 +149,7 @@ def main(args):
     if args.pretrain_path is not None:
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
 
-    model = build_segmentor(
-        cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
-    )
+    model = build_segmentor(cfg.model)
     model.backbone.init_weights()
 
     module = SegmentationModule(
