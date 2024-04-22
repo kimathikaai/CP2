@@ -7,8 +7,7 @@ import cv2
 import lightning as L
 import numpy as np
 import torch
-from mmcv import image
-from scipy.ndimage import interpolation
+from torchvision import transforms as T
 from torch.utils.data import DataLoader, Dataset
 
 from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
@@ -26,6 +25,7 @@ class SegmentationDataset(Dataset):
         self.image_mask_paths = image_mask_paths
         self.transform = transform
         self.num_classes = num_classes
+        self.to_tensor = T.ToTensor()
 
     def __len__(self):
         return len(self.image_mask_paths)
@@ -43,7 +43,7 @@ class SegmentationDataset(Dataset):
             # Binarize detection mask
             mask = np.array(mask, dtype=bool)
 
-        return torch.Tensor(image), torch.Tensor(mask)
+        return self.to_tensor(image), torch.Tensor(mask)
 
 
 class SegmentationDataModule(L.LightningDataModule):
