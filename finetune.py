@@ -83,7 +83,7 @@ class CustomCallback(Callback):
 
             # Plot one image for now
             mask_img = wandb.Image(
-                images[0].cpu().detach().numpy(),
+                images[0].permute(1,2,0).cpu().detach().numpy(),
                 masks={
                     "predictions": {"mask_data": masks_pred[0].cpu().detach().numpy()},
                     "ground_truth": {"mask_data": masks[0].cpu().detach().numpy()},
