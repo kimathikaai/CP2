@@ -8,9 +8,10 @@ import lightning as L
 import numpy as np
 import torch
 from mmcv import image
-from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
 from scipy.ndimage import interpolation
 from torch.utils.data import DataLoader, Dataset
+
+from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
 
 TRAIN_SPLIT_SEED = 0
 
@@ -188,11 +189,16 @@ class GLASDataModule(SegmentationDataModule):
         assert num_train_samples > 0 and num_train_samples <= len(
             self.train_image_mask_paths
         )
-        train_data = np.random.RandomState(
+        train_idxs = np.random.RandomState(
             abs(hash(f"train-split-{TRAIN_SPLIT_SEED}")) % (2**31)
-        ).choice(self.train_image_mask_paths, size=num_train_samples, replace=False)
-        self.train_image_mask_paths = train_data
+        ).choice(
+            len(self.train_image_mask_paths), size=num_train_samples, replace=False
+        )
+        self.train_image_mask_paths = [
+            self.train_image_mask_paths[i] for i in train_idxs
+        ]
         print(f"[updated] {len(self.train_image_mask_paths) = }")
+        assert len(self.train_image_mask_paths) == num_train_samples
 
         # setup transforms
         self.image_size = image_size
