@@ -9,8 +9,12 @@ from dotenv import load_dotenv
 from lightning.pytorch.callbacks import (Callback, LearningRateMonitor,
                                          ModelCheckpoint)
 from lightning.pytorch.loggers import WandbLogger
+from mmengine.config import Config
+from mmseg.models import build_segmentor
 
+import builder
 from datasets.finetune_dataset import GLASDataModule
+from networks.segment_network import SegmentationModule
 
 
 def get_args():
@@ -28,20 +32,20 @@ def get_args():
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
 
-    parser.add_argument("--log_dir", type=str, help='For storing artifacts')
-    parser.add_argument("--wandb_project", type=str, required=True, help='Wandb project name')
-    parser.add_argument("--num_gpus", type=int, default=4, help='number of gpus')
+    parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
+    parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
+    parser.add_argument("--num_gpus", type=int, default=2, help='number of gpus')
     parser.add_argument("--num_workers", type=int, default=0, help='number of workers')
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
     parser.add_argument("--use_profiler", action='store_true', help="For debugging")
 
     parser.add_argument("--img_size", type=int, default=512)
-    parser.add_argument("--num_classes", type=int, required=True)
+    parser.add_argument("--num_classes", type=int, default=2)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
-    parser.add_argument("--lr", type=float, default=0.0001, help='Max learning rate used during training') 
+    parser.add_argument("--lr", type=float, default=0.001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=200, help='Number of training epochs') 
-    parser.add_argument("--weight_decay", type=float, default=0.05, help='weight decay of optimizer')  ## from centralai codebase
+    parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
     parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
     # fmt:on
 
@@ -138,6 +142,26 @@ def main(args):
         save_dir=args.run_dir,
     )
 
+    #
+    # Setup the model
+    #
+    cfg = Config.fromfile(args.config)
+    if args.pretrain_path is not None:
+        cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+
+    model = build_segmentor(
+        cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
+    )
+    model.backbone.init_weights()
+
+    module = SegmentationModule(
+        model=model,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        num_classes=args.num_classes,
+        image_shape=datamodule.image_shape,
+    )
+
     # setup trainer
     trainer = L.Trainer(
         strategy="ddp",
@@ -154,7 +178,34 @@ def main(args):
 
     # log additional parameters
     if trainer.global_rank == 0:
+        wandb_logger.watch(module, log="all", log_graph=True)
         wandb_logger.experiment.config.update({"hyper-parameters": vars(args)})
+
+    # Train
+    trainer.fit(module, datamodule=datamodule)
+
+    # The watch method adds hooks to the model which can be removed at the end of training
+    wandb_logger.experiment.unwatch(module)
+
+    #
+    # Test the model
+    #
+    if trainer.global_rank == 0:
+        # Setup a test trainer
+        test_trainer = L.Trainer(
+            devices=1,
+            num_nodes=1,
+            logger=wandb_logger,
+            fast_dev_run=args.fast_dev_run,
+            accelerator="gpu",
+        )
+
+        print(f"{checkpoint_callback.best_model_path = }")
+        test_trainer.test(
+            module,
+            datamodule=datamodule,
+            ckpt_path=checkpoint_callback.best_model_path,
+        )
 
 
 if __name__ == "__main__":
