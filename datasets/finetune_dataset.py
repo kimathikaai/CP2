@@ -98,8 +98,6 @@ class SegmentationDataModule(L.LightningDataModule):
             )
             self.image_mask_paths.append((img, mask))
 
-        self.setup()
-
     def setup(self, stage=None) -> None:
         self.dataset_train = SegmentationDataset(
             self.train_image_mask_paths, self.transform_train, self.num_classes
@@ -251,3 +249,5 @@ class GLASDataModule(SegmentationDataModule):
                 ),
             ]
         )
+
+        self.setup()
