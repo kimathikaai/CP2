@@ -43,7 +43,7 @@ def get_args():
     parser.add_argument("--num_classes", type=int, default=2)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
-    parser.add_argument("--lr", type=float, default=0.001, help='Max learning rate used during training') 
+    parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=200, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
     parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
