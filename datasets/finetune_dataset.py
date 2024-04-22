@@ -75,7 +75,7 @@ class SegmentationDataModule(L.LightningDataModule):
         # image information
         self.image_width = image_width
         self.image_height = image_height
-        self.dims = (3, self.image_height, self.image_width)
+        self.image_shape = (3, self.image_height, self.image_width)
 
         # dataloading
         self.num_workers = num_workers
