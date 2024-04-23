@@ -1,3 +1,5 @@
+from enum import Enum
+
 import lightning as L
 import torch
 import torch.nn as nn
@@ -8,16 +10,48 @@ from torchmetrics import JaccardIndex
 BACKGROUND_CLASS = 0
 
 
+class PretrainType(Enum):
+    """
+    Used to determine how to load pretrained weights
+    """
+
+    RANDOM = 0
+    IMAGENET = 1
+    CP2 = 2
+
+
 class SegmentationModule(L.LightningModule):
     def __init__(
-        self, model_config, learning_rate, weight_decay, num_classes, image_shape
+        self,
+        model_config,
+        pretrain_type: PretrainType,
+        learning_rate,
+        weight_decay,
+        num_classes,
+        image_shape,
     ):
         super().__init__()
         self.save_hyperparameters()
 
         # Initialize the model
         self.model = build_segmentor(model_config.model)
-        self.model.backbone.init_weights()
+        assert pretrain_type in PretrainType
+        if pretrain_type == PretrainType.IMAGENET:
+            self.model.backbone.init_cfg.checkpoint = "torchvision://resnet50"
+            self.model.backbone.init_weights()
+        elif pretrain_type == PretrainType.CP2:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            state_dict = {
+                x.replace("module.encoder_k", ""): y
+                for x, y in checkpoint["state_dict"].items()
+                if "encoder_k" in x
+            }
+            self.model.load_state_dict(state_dict)
+        elif pretrain_type == PretrainType.RANDOM:
+            pass
+        else:
+            raise NotImplementedError(f"{pretrain_type = }")
 
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay

@@ -13,7 +13,7 @@ from mmengine.config import Config
 from mmseg.models import build_segmentor
 
 from datasets.finetune_dataset import GLASDataModule
-from networks.segment_network import SegmentationModule
+from networks.segment_network import PretrainType, SegmentationModule
 
 
 def get_args():
@@ -45,7 +45,9 @@ def get_args():
     parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=200, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
+
     parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
+    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
     # fmt:on
 
     args = parser.parse_args()
@@ -53,6 +55,8 @@ def get_args():
     # only 1 for now
     assert len(args.img_dirs) == 1
     assert len(args.mask_dirs) == 1
+    # convert to enum
+    args.pretrain_type = PretrainType[args.pretrain_type]
 
     return args
 
@@ -83,7 +87,7 @@ class CustomCallback(Callback):
 
             # Plot one image for now
             mask_img = wandb.Image(
-                images[0].permute(1,2,0).cpu().detach().numpy(),
+                images[0].permute(1, 2, 0).cpu().detach().numpy(),
                 masks={
                     "predictions": {"mask_data": masks_pred[0].cpu().detach().numpy()},
                     "ground_truth": {"mask_data": masks[0].cpu().detach().numpy()},
@@ -151,6 +155,7 @@ def main(args):
     cfg.model.decode_head.num_classes = args.num_classes
     model = SegmentationModule(
         model_config=cfg,
+        pretrain_type=args.pretrain_type,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
