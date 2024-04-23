@@ -43,7 +43,7 @@ class SegmentationModule(L.LightningModule):
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             state_dict = {
-                x.replace("module.encoder_k", ""): y
+                x.replace("module.encoder_k.", ""): y
                 for x, y in checkpoint["state_dict"].items()
                 if "encoder_k" in x
             }
