@@ -47,6 +47,8 @@ class SegmentationModule(L.LightningModule):
                 for x, y in checkpoint["state_dict"].items()
                 if "encoder_k" in x
             }
+            # Remove the conv_seg weights for now (mismatch in num_classes)
+            state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             self.model.load_state_dict(state_dict)
         elif pretrain_type == PretrainType.RANDOM:
             pass
