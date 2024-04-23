@@ -49,7 +49,7 @@ class SegmentationModule(L.LightningModule):
             }
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
-            self.model.load_state_dict(state_dict, strict=False)
+            print(self.model.load_state_dict(state_dict, strict=False))
         elif pretrain_type == PretrainType.RANDOM:
             pass
         else:
