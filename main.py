@@ -370,7 +370,7 @@ def main_worker(rank, args):
                     filename=os.path.join(
                         args.log_dir,
                         args.run_id,
-                        "checkpoint_{:04d}.pth.tar".format(epoch),
+                        "checkpoint.pth",
                     ),
                 )
     cleanup()
@@ -519,10 +519,10 @@ def train(
     return step
 
 
-def save_checkpoint(state, is_best, filename="checkpoint.pth.tar"):
+def save_checkpoint(state, is_best, filename="checkpoint.pth"):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, "model_best.pth.tar")
+        shutil.copyfile(filename, "best_checkpoint.pth")
 
 
 class AverageMeter(object):
