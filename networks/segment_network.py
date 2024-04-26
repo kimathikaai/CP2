@@ -76,7 +76,6 @@ class SegmentationModule(L.LightningModule):
             {
                 x
                 + "_micro_dice": Dice(
-                    task="binary" if num_classes == 2 else "multiclass",
                     average="micro",
                     ignore_index=BACKGROUND_CLASS,
                     num_classes=self.num_classes,
