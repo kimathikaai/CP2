@@ -76,6 +76,7 @@ class SegmentationModule(L.LightningModule):
             {
                 x
                 + "_micro_dice": Dice(
+                    task="binary" if num_classes == 2 else "multiclass",
                     average="micro",
                     ignore_index=BACKGROUND_CLASS,
                     num_classes=self.num_classes,
@@ -87,6 +88,7 @@ class SegmentationModule(L.LightningModule):
             {
                 x
                 + "_micro_precision": Precision(
+                    task="binary" if num_classes == 2 else "multiclass",
                     multidim_average="global",
                     ignore_index=BACKGROUND_CLASS,
                     num_classes=self.num_classes,
@@ -98,6 +100,7 @@ class SegmentationModule(L.LightningModule):
             {
                 x
                 + "_micro_recall": Recall(
+                    task="binary" if num_classes == 2 else "multiclass",
                     multidim_average="global",
                     ignore_index=BACKGROUND_CLASS,
                     num_classes=self.num_classes,
@@ -109,6 +112,7 @@ class SegmentationModule(L.LightningModule):
             {
                 x
                 + "_micro_accuracy": Accuracy(
+                    task="binary" if num_classes == 2 else "multiclass",
                     multidim_average="global",
                     ignore_index=BACKGROUND_CLASS,
                     num_classes=self.num_classes,
