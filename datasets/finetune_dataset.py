@@ -7,12 +7,15 @@ import cv2
 import lightning as L
 import numpy as np
 import torch
-from torchvision import transforms as T
 from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms as T
 
 from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
 
-TRAIN_SPLIT_SEED = 0
+DATA_RANDOM_SEED = 0
+BASE_TRAIN_SPLIT = 0.7
+BASE_TEST_SPLIT = 0.2
+BASE_VAL_SPLIT = 1 - BASE_TRAIN_SPLIT - BASE_TEST_SPLIT
 
 
 class SegmentationDataset(Dataset):
@@ -188,7 +191,133 @@ class GLASDataModule(SegmentationDataModule):
             self.train_image_mask_paths
         )
         train_idxs = np.random.RandomState(
-            abs(hash(f"train-split-{TRAIN_SPLIT_SEED}")) % (2**31)
+            abs(hash(f"train-split-{DATA_RANDOM_SEED}")) % (2**31)
+        ).choice(
+            len(self.train_image_mask_paths), size=num_train_samples, replace=False
+        )
+        self.train_image_mask_paths = [
+            self.train_image_mask_paths[i] for i in train_idxs
+        ]
+        print(f"[updated] {len(self.train_image_mask_paths) = }")
+        assert len(self.train_image_mask_paths) == num_train_samples
+
+        # setup transforms
+        self.image_size = image_size
+        self.transform_train = A.Compose(
+            [
+                A.SmallestMaxSize(
+                    max_size=self.image_size,
+                    interpolation=cv2.INTER_NEAREST,
+                    always_apply=True,
+                ),
+                A.RandomCrop(
+                    height=self.image_size, width=self.image_size, always_apply=True
+                ),
+                A.HorizontalFlip(),
+                A.VerticalFlip(),
+                A.ColorJitter(
+                    brightness=(0.65, 1.35),
+                    contrast=(0.5, 1.5),
+                    saturation=(0, 1),
+                    hue=(-0.1, 0.1),
+                    p=0.75,
+                ),
+                A.GridDistortion(p=0.2),
+                A.GaussNoise(p=0.5),
+            ]
+        )
+        self.transform_val = A.Compose(
+            [
+                A.SmallestMaxSize(
+                    max_size=self.image_size,
+                    interpolation=cv2.INTER_NEAREST,
+                    always_apply=True,
+                ),
+                A.RandomCrop(
+                    height=self.image_size, width=self.image_size, always_apply=True
+                ),
+                A.HorizontalFlip(),
+                A.VerticalFlip(),
+            ]
+        )
+        self.transform_test = A.Compose(
+            [
+                A.SmallestMaxSize(
+                    max_size=self.image_size,
+                    interpolation=cv2.INTER_NEAREST,
+                    always_apply=True,
+                ),
+                A.CenterCrop(
+                    height=self.image_size, width=self.image_size, always_apply=True
+                ),
+            ]
+        )
+
+        self.setup()
+
+
+class PolypDataModule(SegmentationDataModule):
+    def __init__(
+        self,
+        image_directory: str,
+        mask_directory: str,
+        batch_size: int,
+        num_workers: int,
+        num_classes: int,
+        image_size: int,
+        train_data_ratio: float,
+    ) -> None:
+        super().__init__(
+            image_directory,
+            mask_directory,
+            batch_size,
+            num_workers,
+            num_classes,
+            image_size,
+            image_size,
+        )
+
+        #
+        # Create the datasplits
+        #
+        num_train_samples = int(len(self.image_mask_paths) * BASE_TRAIN_SPLIT)
+        num_test_samples = int(len(self.image_mask_paths) * BASE_TEST_SPLIT)
+        num_val_samples = (
+            len(self.image_mask_paths) - num_train_samples - num_test_samples
+        )
+
+        # shuffle
+        idxs = np.arange(len(self.image_mask_paths))
+        np.random.RandomState(
+            abs(hash(f"idxs-shuffle-{DATA_RANDOM_SEED}")) % (2**31)
+        ).shuffle(idxs)
+
+        # fmt:off
+        self.train_image_mask_paths = [self.image_mask_paths[i] for i in idxs[:num_train_samples]]
+        self.test_image_mask_paths = [self.image_mask_paths[i] for i in idxs[num_train_samples:num_train_samples+num_test_samples]]
+        self.val_image_mask_paths = [self.image_mask_paths[i] for i in idxs[num_train_samples+num_test_samples:]]
+        # fmt:on
+
+        # Validate initial splits
+        print(f"{len(self.train_image_mask_paths) = }")
+        print(f"{len(self.val_image_mask_paths) = }")
+        print(f"{len(self.test_image_mask_paths) = }")
+        assert len(self.train_image_mask_paths) + len(self.val_image_mask_paths) + len(
+            self.test_image_mask_paths
+        ) == len(self.image_mask_paths)
+
+        #
+        # Reduce train data
+        #
+        self.train_data_ratio = train_data_ratio
+        num_train_samples = int(
+            len(self.train_image_mask_paths) * self.train_data_ratio
+        )
+        assert num_train_samples > 0 and num_train_samples <= len(
+            self.train_image_mask_paths
+        )
+        train_idxs = np.random.RandomState(
+            abs(hash(f"train-split-{DATA_RANDOM_SEED}")) % (2**31)
         ).choice(
             len(self.train_image_mask_paths), size=num_train_samples, replace=False
         )
