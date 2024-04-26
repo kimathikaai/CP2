@@ -12,7 +12,7 @@ from lightning.pytorch.loggers import WandbLogger
 from mmengine.config import Config
 from mmseg.models import build_segmentor
 
-from datasets.finetune_dataset import GLASDataModule
+from datasets.finetune_dataset import GLASDataModule, PolypDataModule
 from networks.segment_network import PretrainType, SegmentationModule
 
 
@@ -86,15 +86,18 @@ class CustomCallback(Callback):
                 _, masks_pred = model(images)
                 model.train()
 
-            # Plot one image for now
-            mask_img = wandb.Image(
-                images[0].permute(1, 2, 0).cpu().detach().numpy(),
-                masks={
-                    "predictions": {"mask_data": masks_pred[0].cpu().detach().numpy()},
-                    "ground_truth": {"mask_data": masks[0].cpu().detach().numpy()},
-                },
-            )
-            wandb.log({"Predictions/Augmentations": mask_img})
+            images.permute(0, 2, 3, 1).cpu().detach().numpy()
+            masks_pred.cpu().detach().numpy()
+            masks.cpu().detach().numpy()
+            for i in range(len(images)):
+                mask_img = wandb.Image(
+                    images[i],
+                    masks={
+                        "predictions": {"mask_data": masks_pred[i]},
+                        "ground_truth": {"mask_data": masks[i]},
+                    },
+                )
+                wandb.log({f"Image-{i}": mask_img})
             # trainer.logger.experiment.log_image()
 
             # Plot and add to tensorboard
@@ -107,7 +110,7 @@ class CustomCallback(Callback):
 
 def main(args):
     # Setup data loaders
-    datamodule = GLASDataModule(
+    datamodule = PolypDataModule(
         image_directory=args.img_dirs[0],
         mask_directory=args.mask_dirs[0],
         num_classes=args.num_classes,
@@ -132,7 +135,7 @@ def main(args):
     )
 
     # setup custom callback
-    num = 1
+    num = 10
     example_images_masks = [datamodule.dataset_train[i] for i in range(num)]
     images = torch.stack([x for x, _ in example_images_masks], dim=0)
     masks = torch.stack([y for _, y in example_images_masks], dim=0)
@@ -141,7 +144,7 @@ def main(args):
     # wandb logger
     wandb_logger = WandbLogger(
         project=args.wandb_project,
-        tags=["finetune"]+args.tags,
+        tags=["finetune"] + args.tags,
         name=args.run_id,
         save_dir=args.run_dir,
     )
