@@ -86,9 +86,9 @@ class CustomCallback(Callback):
                 _, masks_pred = model(images)
                 model.train()
 
-            images.permute(0, 2, 3, 1).detach().cpu().numpy()
-            masks.detach().cpu().numpy()
-            masks_pred.detach().cpu().numpy()
+            images = images.permute(0, 2, 3, 1).detach().cpu().numpy()
+            masks = masks.detach().cpu().numpy()
+            masks_pred = masks_pred.detach().cpu().numpy()
             for i in range(len(images)):
                 mask_img = wandb.Image(
                     images[i],
