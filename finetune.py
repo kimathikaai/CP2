@@ -3,16 +3,14 @@ import os
 
 import lightning as L
 import torch
-import torchvision
 import wandb
 from dotenv import load_dotenv
 from lightning.pytorch.callbacks import (Callback, LearningRateMonitor,
                                          ModelCheckpoint)
 from lightning.pytorch.loggers import WandbLogger
 from mmengine.config import Config
-from mmseg.models import build_segmentor
 
-from datasets.finetune_dataset import GLASDataModule, PolypDataModule
+from datasets.finetune_dataset import DataSplitType, PolypDataModule
 from networks.segment_network import PretrainType, SegmentationModule
 
 
@@ -111,6 +109,7 @@ class CustomCallback(Callback):
 def main(args):
     # Setup data loaders
     datamodule = PolypDataModule(
+        data_split_type=DataSplitType.FILENAME,
         image_directory=args.img_dirs[0],
         mask_directory=args.mask_dirs[0],
         num_classes=args.num_classes,

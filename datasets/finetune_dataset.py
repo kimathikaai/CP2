@@ -1,6 +1,8 @@
 import os
+from enum import Enum
 from glob import glob
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import albumentations as A
 import cv2
@@ -16,6 +18,72 @@ DATA_RANDOM_SEED = 0
 BASE_TRAIN_SPLIT = 0.7
 BASE_TEST_SPLIT = 0.2
 BASE_VAL_SPLIT = 1 - BASE_TRAIN_SPLIT - BASE_TEST_SPLIT
+
+
+class DataSplitType(Enum):
+    """
+    Used to indicate different data split creation strategies
+    """
+
+    # Uses predefined train, val, test split ratios (70:10:20)
+    RANDOM = 0
+
+    # Uses a train.csv, val.csv, test.csv
+    CSV = 1
+
+    # Uses indicators in the filenames to split
+    FILENAME = 2
+
+
+def get_data_splits(
+    image_mask_paths: List[Tuple[str, str]],
+    data_split_type: DataSplitType,
+    train_data_ratio: float,
+) -> Dict[str, List[str]]:
+    data = {"train": [], "val": [], "test": []}
+    assert data_split_type in DataSplitType
+
+    if data_split_type == DataSplitType.RANDOM:
+        num_train = int(len(image_mask_paths) * BASE_TRAIN_SPLIT)
+        num_test = int(len(image_mask_paths) * BASE_TEST_SPLIT)
+
+        # shuffle
+        idxs = np.arange(len(image_mask_paths))
+        np.random.RandomState(
+            abs(hash(f"idxs-shuffle-{DATA_RANDOM_SEED}")) % (2**31)
+        ).shuffle(idxs)
+        data["train"] = [image_mask_paths[i] for i in idxs[:num_train]]
+        data["test"] = [
+            image_mask_paths[i] for i in idxs[num_train : num_train + num_test]
+        ]
+        data["val"] = [image_mask_paths[i] for i in idxs[num_train + num_test :]]
+    elif data_split_type == DataSplitType.FILENAME:
+        data["train"] = [(x, y) for x, y in image_mask_paths if "train" in x]
+        data["val"] = [(x, y) for x, y in image_mask_paths if "val" in x]
+        data["test"] = [(x, y) for x, y in image_mask_paths if "test" in x]
+    else:
+        raise NotImplementedError(f"{data_split_type = }")
+
+    # Validate initial splits
+    print(f"{len(data['train']) = }")
+    print(f"{len(data['val']) = }")
+    print(f"{len(data['test']) = }")
+    assert len(data["train"]) + len(data["val"]) + len(data["test"]) == len(
+        image_mask_paths
+    )
+
+    # Reduce train data
+    if train_data_ratio < 1.0:
+        num_train_samples = int(len(data["train"]) * train_data_ratio)
+        assert num_train_samples > 0 and num_train_samples <= len(data["train"])
+        train_idxs = np.random.RandomState(
+            abs(hash(f"train-split-{DATA_RANDOM_SEED}")) % (2**31)
+        ).choice(len(data["train"]), size=num_train_samples, replace=False)
+        data["train"] = [data["train"][i] for i in train_idxs]
+        print(f"[updated] {len(data['train']) = }")
+        assert len(data["train"]) == num_train_samples
+
+    return data
 
 
 class SegmentationDataset(Dataset):
@@ -52,8 +120,10 @@ class SegmentationDataset(Dataset):
 class SegmentationDataModule(L.LightningDataModule):
     def __init__(
         self,
+        data_split_type: DataSplitType,
         image_directory: str,
         mask_directory: str,
+        train_data_ratio: float,
         batch_size: int,
         num_workers: int,
         num_classes: int,
@@ -62,30 +132,15 @@ class SegmentationDataModule(L.LightningDataModule):
     ) -> None:
         super().__init__()
 
-        self.train_image_mask_paths = []
-        self.val_image_mask_paths = []
-        self.test_image_mask_paths = []
-
-        self.transform_train = None
-        self.transform_val = None
-        self.transform_test = None
+        #
+        # Get image and mask paths
+        #
 
         # Validate the directories
         self.image_directory = os.path.abspath(os.path.expanduser(image_directory))
         self.mask_directory = os.path.abspath(os.path.expanduser(mask_directory))
         assert os.path.isdir(self.image_directory)
         assert os.path.isdir(self.mask_directory)
-
-        # image information
-        self.image_width = image_width
-        self.image_height = image_height
-        self.image_shape = (3, self.image_height, self.image_width)
-
-        # dataloading
-        self.num_workers = num_workers
-        self.batch_size = batch_size
-        self.num_classes = num_classes
-
         # Get images
         self.image_paths = sorted(glob(os.path.join(self.image_directory, "*")))
         self.mask_paths = sorted(glob(os.path.join(self.mask_directory, "*")))
@@ -100,6 +155,37 @@ class SegmentationDataModule(L.LightningDataModule):
                 img, mask
             )
             self.image_mask_paths.append((img, mask))
+
+        #
+        # Create data splits
+        #
+
+        assert data_split_type in DataSplitType
+        self.data_split_type = data_split_type
+        self.train_data_ratio = train_data_ratio
+        split_paths = get_data_splits(
+            image_mask_paths=self.image_mask_paths,
+            data_split_type=self.data_split_type,
+            train_data_ratio=self.train_data_ratio,
+        )
+
+        self.train_image_mask_paths = split_paths["train"]
+        self.val_image_mask_paths = split_paths["val"]
+        self.test_image_mask_paths = split_paths["test"]
+
+        self.transform_train = None
+        self.transform_val = None
+        self.transform_test = None
+
+        # image information
+        self.image_width = image_width
+        self.image_height = image_height
+        self.image_shape = (3, self.image_height, self.image_width)
+
+        # dataloading
+        self.num_workers = num_workers
+        self.batch_size = batch_size
+        self.num_classes = num_classes
 
     def setup(self, stage=None) -> None:
         self.dataset_train = SegmentationDataset(
@@ -143,189 +229,29 @@ class SegmentationDataModule(L.LightningDataModule):
         )
 
 
-class GLASDataModule(SegmentationDataModule):
-    def __init__(
-        self,
-        image_directory: str,
-        mask_directory: str,
-        batch_size: int,
-        num_workers: int,
-        num_classes: int,
-        image_size: int,
-        train_data_ratio: float,
-    ) -> None:
-        super().__init__(
-            image_directory,
-            mask_directory,
-            batch_size,
-            num_workers,
-            num_classes,
-            image_size,
-            image_size,
-        )
-
-        # Create the datasplits
-        self.train_image_mask_paths = [
-            (x, y) for x, y in self.image_mask_paths if "train" in x
-        ]
-        self.val_image_mask_paths = [
-            (x, y) for x, y in self.image_mask_paths if "testB" in x
-        ]
-        self.test_image_mask_paths = [
-            (x, y) for x, y in self.image_mask_paths if "testA" in x
-        ]
-        # Validate initial splits
-        print(f"{len(self.train_image_mask_paths) = }")
-        print(f"{len(self.val_image_mask_paths) = }")
-        print(f"{len(self.test_image_mask_paths) = }")
-        assert len(self.train_image_mask_paths) + len(self.val_image_mask_paths) + len(
-            self.test_image_mask_paths
-        ) == len(self.image_mask_paths)
-
-        # Reduce train data
-        self.train_data_ratio = train_data_ratio
-        num_train_samples = int(
-            len(self.train_image_mask_paths) * self.train_data_ratio
-        )
-        assert num_train_samples > 0 and num_train_samples <= len(
-            self.train_image_mask_paths
-        )
-        train_idxs = np.random.RandomState(
-            abs(hash(f"train-split-{DATA_RANDOM_SEED}")) % (2**31)
-        ).choice(
-            len(self.train_image_mask_paths), size=num_train_samples, replace=False
-        )
-        self.train_image_mask_paths = [
-            self.train_image_mask_paths[i] for i in train_idxs
-        ]
-        print(f"[updated] {len(self.train_image_mask_paths) = }")
-        assert len(self.train_image_mask_paths) == num_train_samples
-
-        # setup transforms
-        self.image_size = image_size
-        self.transform_train = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.RandomCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-                A.ColorJitter(
-                    brightness=(0.65, 1.35),
-                    contrast=(0.5, 1.5),
-                    saturation=(0, 1),
-                    hue=(-0.1, 0.1),
-                    p=0.75,
-                ),
-                A.GridDistortion(p=0.2),
-                A.GaussNoise(p=0.5),
-            ]
-        )
-        self.transform_val = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.RandomCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-            ]
-        )
-        self.transform_test = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.CenterCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-            ]
-        )
-
-        self.setup()
-
-
 class PolypDataModule(SegmentationDataModule):
     def __init__(
         self,
+        data_split_type: DataSplitType,
         image_directory: str,
         mask_directory: str,
+        train_data_ratio: float,
         batch_size: int,
         num_workers: int,
         num_classes: int,
         image_size: int,
-        train_data_ratio: float,
     ) -> None:
         super().__init__(
+            data_split_type,
             image_directory,
             mask_directory,
+            train_data_ratio,
             batch_size,
             num_workers,
             num_classes,
             image_size,
             image_size,
         )
-
-        #
-        # Create the datasplits
-        #
-        num_train_samples = int(len(self.image_mask_paths) * BASE_TRAIN_SPLIT)
-        num_test_samples = int(len(self.image_mask_paths) * BASE_TEST_SPLIT)
-        num_val_samples = (
-            len(self.image_mask_paths) - num_train_samples - num_test_samples
-        )
-
-        # shuffle
-        idxs = np.arange(len(self.image_mask_paths))
-        np.random.RandomState(
-            abs(hash(f"idxs-shuffle-{DATA_RANDOM_SEED}")) % (2**31)
-        ).shuffle(idxs)
-
-        # fmt:off
-        self.train_image_mask_paths = [self.image_mask_paths[i] for i in idxs[:num_train_samples]]
-        self.test_image_mask_paths = [self.image_mask_paths[i] for i in idxs[num_train_samples:num_train_samples+num_test_samples]]
-        self.val_image_mask_paths = [self.image_mask_paths[i] for i in idxs[num_train_samples+num_test_samples:]]
-        # fmt:on
-
-        # Validate initial splits
-        print(f"{len(self.train_image_mask_paths) = }")
-        print(f"{len(self.val_image_mask_paths) = }")
-        print(f"{len(self.test_image_mask_paths) = }")
-        assert len(self.train_image_mask_paths) + len(self.val_image_mask_paths) + len(
-            self.test_image_mask_paths
-        ) == len(self.image_mask_paths)
-
-        #
-        # Reduce train data
-        #
-        self.train_data_ratio = train_data_ratio
-        num_train_samples = int(
-            len(self.train_image_mask_paths) * self.train_data_ratio
-        )
-        assert num_train_samples > 0 and num_train_samples <= len(
-            self.train_image_mask_paths
-        )
-        train_idxs = np.random.RandomState(
-            abs(hash(f"train-split-{DATA_RANDOM_SEED}")) % (2**31)
-        ).choice(
-            len(self.train_image_mask_paths), size=num_train_samples, replace=False
-        )
-        self.train_image_mask_paths = [
-            self.train_image_mask_paths[i] for i in train_idxs
-        ]
-        print(f"[updated] {len(self.train_image_mask_paths) = }")
-        assert len(self.train_image_mask_paths) == num_train_samples
 
         # setup transforms
         self.image_size = image_size
