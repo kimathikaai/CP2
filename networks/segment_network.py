@@ -125,7 +125,7 @@ class SegmentationModule(L.LightningModule):
         self.metrics.update(
             {
                 x
-                + "_micro_f1score": Accuracy(
+                + "_micro_f1score": F1Score(
                     task="binary" if num_classes == 2 else "multiclass",
                     multidim_average="global",
                     ignore_index=BACKGROUND_CLASS,
