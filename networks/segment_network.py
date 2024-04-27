@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
-from torchmetrics import Accuracy, Dice, JaccardIndex, Precision, Recall
+from torchmetrics import Accuracy, Dice, JaccardIndex, Precision, Recall, F1Score
 import torch.nn as nn
 
 BACKGROUND_CLASS = 0
@@ -114,6 +114,18 @@ class SegmentationModule(L.LightningModule):
             {
                 x
                 + "_micro_accuracy": Accuracy(
+                    task="binary" if num_classes == 2 else "multiclass",
+                    multidim_average="global",
+                    ignore_index=BACKGROUND_CLASS,
+                    num_classes=self.num_classes,
+                )
+                for x in ["train", "val", "test"]
+            }
+        )
+        self.metrics.update(
+            {
+                x
+                + "_micro_f1score": Accuracy(
                     task="binary" if num_classes == 2 else "multiclass",
                     multidim_average="global",
                     ignore_index=BACKGROUND_CLASS,
