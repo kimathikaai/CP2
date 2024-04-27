@@ -168,7 +168,7 @@ def main(args):
 
     # setup trainer
     trainer = L.Trainer(
-        strategy="ddp",
+        strategy="ddp" if args.num_gpus > 1 else "auto",
         accelerator="gpu",
         devices=args.num_gpus,
         sync_batchnorm=args.num_gpus > 1,
