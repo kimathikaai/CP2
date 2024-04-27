@@ -6,6 +6,7 @@ import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
 from torchmetrics import Accuracy, Dice, JaccardIndex, Precision, Recall
+import torch.nn as nn
 
 BACKGROUND_CLASS = 0
 
@@ -62,16 +63,18 @@ class SegmentationModule(L.LightningModule):
 
         self.loss = nn.CrossEntropyLoss()
 
-        self.metrics = {
-            x
-            + "_micro_iou": JaccardIndex(
-                task="binary" if num_classes == 2 else "multiclass",
-                average="micro",
-                ignore_index=BACKGROUND_CLASS,
-                num_classes=self.num_classes,
-            )
-            for x in ["train", "val", "test"]
-        }
+        self.metrics = nn.ModuleDict(
+            {
+                x
+                + "_micro_iou": JaccardIndex(
+                    task="binary" if num_classes == 2 else "multiclass",
+                    average="micro",
+                    ignore_index=BACKGROUND_CLASS,
+                    num_classes=self.num_classes,
+                )
+                for x in ["train", "val", "test"]
+            }
+        )
         self.metrics.update(
             {
                 x
