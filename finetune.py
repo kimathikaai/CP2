@@ -177,6 +177,7 @@ def main(args):
         profiler="simple" if args.use_profiler else None,
         fast_dev_run=args.fast_dev_run,
         callbacks=[checkpoint_callback, lr_callback, custom_callback],
+        log_every_n_steps=1,
     )
 
     # log additional parameters
