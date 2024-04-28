@@ -15,8 +15,10 @@ class DatasetType(Enum):
     Used to differentiate between expected data structures
     """
 
-    CUSTOM = 0
+    CSV = 0
     CLASSIFICATION = 1
+    # Uses indicators in the filenames to split
+    FILENAME = 2
 
 
 def pil_image_loader(path: str) -> Image.Image:
@@ -24,6 +26,7 @@ def pil_image_loader(path: str) -> Image.Image:
     with open(path, "rb") as f:
         img = Image.open(f)
         return img.convert("RGB")
+
 
 def pil_mask_loader(path: str) -> Image.Image:
     # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
@@ -131,6 +134,7 @@ def get_classification_pretrain_dataset(image_directory_list: List[str], transfo
         assert os.path.exists(img_dir), "DNE: {}".format(img_dir)
         files = glob(os.path.join(img_dir, "*"))
         sample_paths.extend(files)
+
     # sort based on file names
     sample_paths = sorted(sample_paths, key=lambda x: Path(x).stem)
     logging.info(f"Found {len(sample_paths) = } images")
@@ -142,11 +146,20 @@ def get_classification_pretrain_dataset(image_directory_list: List[str], transfo
     return PretrainDataset(sample_paths, transform)
 
 
+def get_filename_pretrain_dataset(dataset: PretrainDataset, split_name):
+    assert split_name in ["train", "val", "test"]
+    orig_len = len(dataset)
+    dataset.images_list = [x for x in dataset.images_list if split_name in x]
+    print(f"{orig_len = }, {len(dataset) = }")
+    return dataset
+
+
 def get_pretrain_dataset(
     image_directory_list: List[str],
     image_csv_list: List[str],
     directory_type: DatasetType,
     transform,
+    split_name=None,
 ):
     """
     Returns an initialized PretrainDataset
@@ -156,9 +169,12 @@ def get_pretrain_dataset(
         os.path.abspath(os.path.expanduser(x)) for x in image_directory_list
     ]
 
-    if directory_type == DatasetType.CUSTOM:
+    if directory_type == DatasetType.CSV:
         return get_custom_pretrain_dataset(
             image_directory_list, image_csv_list, transform
         )
     elif directory_type == DatasetType.CLASSIFICATION:
         return get_classification_pretrain_dataset(image_directory_list, transform)
+    elif directory_type == DatasetType.FILENAME:
+        dataset = get_classification_pretrain_dataset(image_directory_list, transform)
+        get_filename_pretrain_dataset(dataset, split_name)

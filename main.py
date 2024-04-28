@@ -46,7 +46,7 @@ def get_args():
 
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
-    parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], required=True)
+    parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], default=DatasetType.FILENAME.name)
     parser.add_argument("--train_csv_paths", nargs="+", help="CSVs with training data paths")
     parser.add_argument("--val_csv_path", nargs="+", help="CSVs with validation data paths")
     parser.add_argument("--test_csv_path", nargs="+", help="CSVs with test data paths")
@@ -144,12 +144,14 @@ def prepare_data(rank, num_workers, args):
         image_csv_list=args.train_csv_paths,
         transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
         directory_type=args.directory_type,
+        split_name='train'
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
         image_csv_list=args.train_csv_paths,
         transform=transforms.Compose(augmentation_bg),
         directory_type=args.directory_type,
+        split_name='train'
     )
 
     def get_dataloader(dataset, seed):
