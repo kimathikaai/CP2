@@ -108,7 +108,6 @@ class CustomCallback(Callback):
             )
 
             # torch grid makes 1-channel masks 3 channel
-            assert np.all(mask_grid[0] == mask_grid[1] == mask_grid[2])
             wandb_image = wandb.Image(
                 image_grid,
                 masks={
