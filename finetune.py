@@ -72,7 +72,7 @@ class CustomCallback(Callback):
         self.masks = masks
         self.every_n_epochs = every_n_epochs
 
-    def on_train_epoch_end(self, trainer, model):
+    def on_train_epoch_start(self, trainer, model):
         if (
             trainer.current_epoch % self.every_n_epochs == 0
             and trainer.global_rank == 0
