@@ -173,4 +173,4 @@ def get_pretrain_dataset(
         return get_classification_pretrain_dataset(image_directory_list, transform)
     elif directory_type == DatasetType.FILENAME:
         dataset = get_classification_pretrain_dataset(image_directory_list, transform)
-        get_filename_pretrain_dataset(dataset, split_name)
+        return get_filename_pretrain_dataset(dataset, split_name)
