@@ -2,6 +2,7 @@ import argparse
 import os
 
 import lightning as L
+import numpy as np
 import torch
 import torchvision
 import wandb
@@ -106,11 +107,13 @@ class CustomCallback(Callback):
                 .numpy()
             )
 
+            # torch grid makes 1-channel masks 3 channel
+            assert np.all(mask_grid[0] == mask_grid[1] == mask_grid[2])
             wandb_image = wandb.Image(
                 image_grid,
                 masks={
-                    "predictions": {"mask_data": pred_mask_grid},
-                    "ground_truth": {"mask_data": mask_grid},
+                    "predictions": {"mask_data": pred_mask_grid[0, :, :]},
+                    "ground_truth": {"mask_data": mask_grid[0, :, :]},
                 },
             )
             wandb.log({"Segmentations": wandb_image})
