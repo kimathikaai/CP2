@@ -88,20 +88,20 @@ class CustomCallback(Callback):
 
             # create torch grids
             image_grid = (
-                torchvision.utils.make_grid(images, nrow=len(images))
+                torchvision.utils.make_grid(images, nrow=1)
                 .permute(1, 2, 0)
                 .detach()
                 .cpu()
                 .numpy()
             )
             mask_grid = (
-                torchvision.utils.make_grid(masks.unsqueeze(1), nrow=len(images))
+                torchvision.utils.make_grid(masks.unsqueeze(1), nrow=1)
                 .detach()
                 .cpu()
                 .numpy()
             )
             pred_mask_grid = (
-                torchvision.utils.make_grid(masks_pred.unsqueeze(1), nrow=len(images))
+                torchvision.utils.make_grid(masks_pred.unsqueeze(1), nrow=1)
                 .detach()
                 .cpu()
                 .numpy()
