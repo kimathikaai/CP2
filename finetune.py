@@ -3,6 +3,7 @@ import os
 
 import lightning as L
 import torch
+import torchvision
 import wandb
 from dotenv import load_dotenv
 from lightning.pytorch.callbacks import (Callback, LearningRateMonitor,
@@ -84,26 +85,19 @@ class CustomCallback(Callback):
                 _, masks_pred = model(images)
                 model.train()
 
-            images = images.permute(0, 2, 3, 1).detach().cpu().numpy()
-            masks = masks.detach().cpu().numpy()
-            masks_pred = masks_pred.detach().cpu().numpy()
-            for i in range(len(images)):
-                mask_img = wandb.Image(
-                    images[i],
-                    masks={
-                        "predictions": {"mask_data": masks_pred[i]},
-                        "ground_truth": {"mask_data": masks[i]},
-                    },
-                )
-                wandb.log({f"Image-{i}": mask_img})
-            # trainer.logger.experiment.log_image()
+            # create torch grids
+            image_grid = torchvision.utils.make_grid(images, nrow=len(images))
+            mask_grid = torchvision.utils.make_grid(masks, nrow=len(images))
+            pred_mask_grid = torchvision.utils.make_grid(masks_pred, nrow=len(images))
 
-            # Plot and add to tensorboard
-            # imgs = torch.stack([images, masks, masks_pred], dim=1).flatten(0, 1)
-            # grid = torchvision.utils.make_grid(imgs, nrow=3)
-            # trainer.logger.experiment.log_image(
-            #     "Reconstructions", grid, global_step=trainer.global_step
-            # )
+            wandb_image = wandb.Image(
+                image_grid,
+                masks={
+                    "predictions": {"mask_data": pred_mask_grid},
+                    "ground_truth": {"mask_data": mask_grid},
+                },
+            )
+            wandb.log({"Segmentations": wandb_image})
 
 
 def main(args):
