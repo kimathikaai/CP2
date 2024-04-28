@@ -86,9 +86,25 @@ class CustomCallback(Callback):
                 model.train()
 
             # create torch grids
-            image_grid = torchvision.utils.make_grid(images, nrow=len(images)).permute(1,2,0).detach().cpu().numpy()
-            mask_grid = torchvision.utils.make_grid(masks, nrow=len(images)).detach().cpu().numpy()
-            pred_mask_grid = torchvision.utils.make_grid(masks_pred, nrow=len(images)).detach().cpu().numpy()
+            image_grid = (
+                torchvision.utils.make_grid(images, nrow=len(images))
+                .permute(1, 2, 0)
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            mask_grid = (
+                torchvision.utils.make_grid(masks.unsqueeze(1), nrow=len(images))
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            pred_mask_grid = (
+                torchvision.utils.make_grid(masks_pred.unsqueeze(1), nrow=len(images))
+                .detach()
+                .cpu()
+                .numpy()
+            )
 
             wandb_image = wandb.Image(
                 image_grid,
