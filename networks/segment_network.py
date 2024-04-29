@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
-from torchmetrics import Accuracy, Dice, JaccardIndex, Precision, Recall, F1Score
-import torch.nn as nn
+from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
+                          MetricCollection, Precision, Recall)
 
 BACKGROUND_CLASS = 0
 
@@ -63,113 +63,48 @@ class SegmentationModule(L.LightningModule):
 
         self.loss = nn.CrossEntropyLoss()
 
-        self.metrics = nn.ModuleDict(
-            {
-                x
-                + "_micro_iou": JaccardIndex(
-                    task="binary" if num_classes == 2 else "multiclass",
+        #
+        # Metrics
+        #
+        self.binary_task = self.num_classes == 2
+        self.metric_task = "binary" if self.binary_task else "multiclass"
+        self.ignore_index = None if self.binary_task else BACKGROUND_CLASS
+        metrics = MetricCollection(
+            [
+                JaccardIndex(
+                    task=self.metric_task,
+                    average="micro",
+                    ignore_index=self.ignore_index,
+                    num_classes=self.num_classes,
+                ),
+                Dice(
                     average="micro",
                     ignore_index=BACKGROUND_CLASS,
                     num_classes=self.num_classes,
-                )
-                for x in ["train", "val", "test"]
-            }
-        )
-        self.metrics.update(
-            {
-                x
-                + "_micro_dice": Dice(
-                    average="micro",
-                    ignore_index=BACKGROUND_CLASS,
-                    num_classes=self.num_classes,
-                )
-                for x in ["train", "val", "test"]
-            }
-        )
-        self.metrics.update(
-            {
-                x
-                + "_micro_precision": Precision(
-                    task="binary" if num_classes == 2 else "multiclass",
+                ),
+                Precision(
+                    task=self.metric_task,
                     multidim_average="global",
-                    ignore_index=BACKGROUND_CLASS,
+                    ignore_index=self.ignore_index,
                     num_classes=self.num_classes,
-                )
-                for x in ["train", "val", "test"]
-            }
-        )
-        self.metrics.update(
-            {
-                x
-                + "_micro_recall": Recall(
-                    task="binary" if num_classes == 2 else "multiclass",
+                ),
+                Recall(
+                    task=self.metric_task,
                     multidim_average="global",
-                    ignore_index=BACKGROUND_CLASS,
+                    ignore_index=self.ignore_index,
                     num_classes=self.num_classes,
-                )
-                for x in ["train", "val", "test"]
-            }
-        )
-        self.metrics.update(
-            {
-                x
-                + "_micro_accuracy": Accuracy(
-                    task="binary" if num_classes == 2 else "multiclass",
+                ),
+                F1Score(
+                    task=self.metric_task,
                     multidim_average="global",
-                    ignore_index=BACKGROUND_CLASS,
+                    ignore_index=self.ignore_index,
                     num_classes=self.num_classes,
-                )
-                for x in ["train", "val", "test"]
-            }
+                ),
+            ]
         )
-        self.metrics.update(
-            {
-                x
-                + "_micro_f1score": F1Score(
-                    task="binary" if num_classes == 2 else "multiclass",
-                    multidim_average="global",
-                    ignore_index=BACKGROUND_CLASS,
-                    num_classes=self.num_classes,
-                )
-                for x in ["train", "val", "test"]
-            }
-        )
-
-        # self.metrics = {
-        #     "train_micro_iou": JaccardIndex(
-        #         task="multiclass",
-        #         average="micro",
-        #         ignore_index=BACKGROUND_CLASS,
-        #         num_classes=self.num_classes,
-        #     ),
-        #     "val_micro_iou": JaccardIndex(
-        #         task="multiclass",
-        #         average="micro",
-        #         ignore_index=BACKGROUND_CLASS,
-        #         num_classes=self.num_classes,
-        #     ),
-        #     "test_micro_iou": JaccardIndex(
-        #         task="multiclass",
-        #         average="micro",
-        #         ignore_index=BACKGROUND_CLASS,
-        #         num_classes=self.num_classes,
-        #     ),
-        #     "train_micro_dice": Dice(
-        #         average="micro",
-        #         ignore_index=BACKGROUND_CLASS,
-        #         num_classes=self.num_classes,
-        #     ),
-        #     "val_micro_dice": Dice(
-        #         average="micro",
-        #         ignore_index=BACKGROUND_CLASS,
-        #         num_classes=self.num_classes,
-        #     ),
-        #     "test_micro_dice": Dice(
-        #         average="micro",
-        #         ignore_index=BACKGROUND_CLASS,
-        #         num_classes=self.num_classes,
-        #     ),
-        # }
+        self.train_metrics = metrics.clone(prefix="train_")
+        self.val_metrics = metrics.clone(prefix="val_")
+        self.test_metrics = metrics.clone(prefix="test_")
 
     def forward(self, images):
         logits = self.model(images)
@@ -190,14 +125,32 @@ class SegmentationModule(L.LightningModule):
 
         images, masks = batch
         logits, argmax_logits = self.forward(images)
+        # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, masks)
 
         # update logs
         self.log(f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
-        for name, metric in self.metrics.items():
-            if stage in name:
-                metric.update(argmax_logits, masks)
-                self.log(name, metric, on_epoch=True, on_step=True)
+        if stage == "train":
+            self.train_metrics.update(argmax_logits, masks)
+            self.log_dict(
+                {k: v for k, v in self.train_metrics.items()},
+                on_epoch=True,
+                on_step=True,
+            )
+        elif stage == "val":
+            self.val_metrics.update(argmax_logits, masks)
+            self.log_dict(
+                {k: v for k, v in self.val_metrics.items()},
+                on_epoch=True,
+                on_step=False,
+            )
+        elif stage == "test":
+            self.test_metrics.update(argmax_logits, masks)
+            self.log_dict(
+                {k: v for k, v in self.test_metrics.items()},
+                on_epoch=True,
+                on_step=False,
+            )
 
         return loss
 
