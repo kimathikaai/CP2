@@ -129,7 +129,6 @@ class SegmentationModule(L.LightningModule):
         loss = self.loss(logits, masks)
 
         # update logs
-        self.log(f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
         if stage == "train":
             self.train_metrics.update(argmax_logits, masks)
             self.log_dict(
@@ -137,6 +136,7 @@ class SegmentationModule(L.LightningModule):
                 on_epoch=True,
                 on_step=True,
             )
+            self.log(f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
         elif stage == "val":
             self.val_metrics.update(argmax_logits, masks)
             self.log_dict(
@@ -144,12 +144,18 @@ class SegmentationModule(L.LightningModule):
                 on_epoch=True,
                 on_step=False,
             )
+            self.log(
+                f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
+            )
         elif stage == "test":
             self.test_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.test_metrics.items()},
                 on_epoch=True,
                 on_step=False,
+            )
+            self.log(
+                f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
             )
 
         return loss

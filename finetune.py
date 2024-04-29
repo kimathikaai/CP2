@@ -141,7 +141,7 @@ def main(args):
         dirpath=args.run_dir,
         filename="{epoch}-{step}-{val_micro_iou:.2f}",
         save_top_k=1,
-        monitor="val_micro_iou",
+        monitor="val_BinaryJaccardIndex",
         mode="max",
     )
 
