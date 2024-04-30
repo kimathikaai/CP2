@@ -58,9 +58,9 @@ def get_data_splits(
         ]
         data["val"] = [image_mask_paths[i] for i in idxs[num_train + num_test :]]
     elif data_split_type == DataSplitType.FILENAME:
-        data["train"] = [(x, y) for x, y in image_mask_paths if "_train" in x]
-        data["val"] = [(x, y) for x, y in image_mask_paths if "_val" in x]
-        data["test"] = [(x, y) for x, y in image_mask_paths if "_test" in x]
+        data["train"] = [(x, y) for x, y in image_mask_paths if "train" in x]
+        data["val"] = [(x, y) for x, y in image_mask_paths if "val" in x]
+        data["test"] = [(x, y) for x, y in image_mask_paths if "test" in x]
     else:
         raise NotImplementedError(f"{data_split_type = }")
 
