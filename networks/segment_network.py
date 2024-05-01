@@ -2,6 +2,7 @@ from enum import Enum
 
 import lightning as L
 import torch
+from torch._dynamo.skipfiles import check
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
@@ -19,6 +20,12 @@ class PretrainType(Enum):
     RANDOM = 0
     IMAGENET = 1
     CP2 = 2
+    MIRROR = 3
+
+class Stage(Enum):
+    TRAIN = 0
+    VAL = 1
+    TEST = 2
 
 
 class SegmentationModule(L.LightningModule):
@@ -40,6 +47,8 @@ class SegmentationModule(L.LightningModule):
         if pretrain_type == PretrainType.IMAGENET:
             self.model.backbone.init_cfg.checkpoint = "torchvision://resnet50"
             self.model.backbone.init_weights()
+        elif pretrain_type == PretrainType.RANDOM:
+            pass
         elif pretrain_type == PretrainType.CP2:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
@@ -51,8 +60,11 @@ class SegmentationModule(L.LightningModule):
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             print(self.model.load_state_dict(state_dict, strict=False))
-        elif pretrain_type == PretrainType.RANDOM:
-            pass
+        elif pretrain_type == PretrainType.MIRROR:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            state_dict = checkpoint['state_dict']
+            print(self.load_state_dict(state_dict, strict=True))
         else:
             raise NotImplementedError(f"{pretrain_type = }")
 
@@ -129,7 +141,7 @@ class SegmentationModule(L.LightningModule):
         loss = self.loss(logits, masks)
 
         # update logs
-        if stage == "train":
+        if stage == Stage.TRAIN:
             self.train_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.train_metrics.items()},
@@ -137,7 +149,7 @@ class SegmentationModule(L.LightningModule):
                 on_step=True,
             )
             self.log(f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
-        elif stage == "val":
+        elif stage == Stage.VAL:
             self.val_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.val_metrics.items()},
@@ -147,7 +159,7 @@ class SegmentationModule(L.LightningModule):
             self.log(
                 f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
             )
-        elif stage == "test":
+        elif stage == Stage.TEST:
             self.test_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.test_metrics.items()},
@@ -161,13 +173,13 @@ class SegmentationModule(L.LightningModule):
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, "train")
+        return self.shared_step(batch, Stage.TRAIN)
 
     def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, "val")
+        return self.shared_step(batch, Stage.VAL)
 
     def test_step(self, batch, batch_idx):
-        return self.shared_step(batch, "test")
+        return self.shared_step(batch, Stage.TEST)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
