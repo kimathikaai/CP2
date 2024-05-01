@@ -148,6 +148,9 @@ class SegmentationDataModule(L.LightningDataModule):
         assert len(self.image_paths) > 0
         assert len(self.mask_paths) == len(self.mask_paths)
 
+        # Remove the csv file
+        self.images_paths = [x for x in self.images_paths if '.csv' not in x]
+
         # Make sure all images have corresponding masks
         self.image_mask_paths = []
         for img, mask in zip(self.image_paths, self.mask_paths):
