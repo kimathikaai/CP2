@@ -367,7 +367,7 @@ def main_worker(rank, args):
                     filename=os.path.join(
                         args.log_dir,
                         args.run_id,
-                        "checkpoint.pth",
+                        "checkpoint.ckpt",
                     ),
                 )
     cleanup()
@@ -516,7 +516,7 @@ def train(
     return step
 
 
-def save_checkpoint(state, is_best, filename="checkpoint.pth"):
+def save_checkpoint(state, is_best, filename="checkpoint.ckpt"):
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, "best_checkpoint.pth")
