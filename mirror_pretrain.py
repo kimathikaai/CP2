@@ -24,7 +24,7 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     # fmt:off
-    parser.add_argument('--config', default='configs/config_pretrain.py', help='path to configuration file')
+    parser.add_argument('--config', default='configs/config_finetune.py', help='path to configuration file')
     parser.add_argument("--seed", type=int, default=0, help='Set global seed')
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
