@@ -110,8 +110,14 @@ def get_custom_pretrain_dataset(image_directory_list: List[str], split_name, tra
         included_paths_stems = get_file_stem(included_paths)
         file_paths = glob(os.path.join(img_dir, "*"))
         _sample_paths = [x for x in file_paths if Path(x).stem in included_paths_stems]
+        _sample_stems = [Path(x).stem for x in _sample_paths]
         # validate filtering
-        assert len(included_paths) == len(_sample_paths), f"{len(_sample_paths) = }, {len(included_paths) = }"
+        print(
+            f"[info] Path differences: {set(_sample_stems).symmetric_difference(set(included_paths_stems))}"
+        )
+        assert len(included_paths) == len(
+            _sample_paths
+        ), f"{len(_sample_paths) = }, {len(included_paths) = }"
         print(f"[info] Loading {len(_sample_paths) = } from {img_dir}")
         sample_paths.extend(_sample_paths)
 
