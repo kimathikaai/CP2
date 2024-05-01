@@ -14,6 +14,7 @@ from mmengine.config import Config
 
 from networks.mirror_network import MirrorModule
 from datasets.pretrain_dataset import CutPasteDataModule, MirrorVariant
+from networks.segment_network import PretrainType
 
 
 def get_args():
@@ -187,7 +188,7 @@ def main(args):
     cfg.model.decode_head.num_classes = args.num_classes
     model = MirrorModule(
         model_config=cfg,
-        pretrain_type=args.pretrain_type,
+        pretrain_type=PretrainType.IMAGENET,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
