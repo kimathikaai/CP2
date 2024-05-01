@@ -4,6 +4,7 @@ import os
 from enum import Enum
 from glob import glob
 from pathlib import Path
+from random import sample
 from typing import List
 
 from PIL import Image
@@ -90,41 +91,32 @@ class PretrainDataset(Dataset):
         return sample
 
 
-def get_custom_pretrain_dataset(
-    image_directory_list: List[str], image_csv_list: List[str], transform
-):
-    image_csv_list = [os.path.abspath(os.path.expanduser(x)) for x in image_csv_list]
-    print(
-        f"[info] Loading image from\n{image_directory_list}\naccording to\n {image_csv_list}"
-    )
+def get_custom_pretrain_dataset(image_directory_list: List[str], split_name, transform):
+    # Assumes that the split csv file is in the same directory as the image data
 
-    # validate directory existence and get images
+    # for each directory find the split csv file
+    # then get the full paths of the images in that csv file
+    # the assert that the number of collected and viable paths is the same as the csv List
+    # output the number of files used from this directory
+
+    # then extend a larger list of files that will be used to create the dataset
+
     sample_paths = []
+
     for img_dir in image_directory_list:
         assert os.path.exists(img_dir), "DNE: {}".format(img_dir)
-        files = glob(os.path.join(img_dir, "*"))
-        sample_paths.extend(files)
-    # sort based on file names
-    sample_paths = sorted(sample_paths, key=lambda x: Path(x).stem)
-    print(f"Found {len(sample_paths) = } images")
+        csv_path = os.path.join(img_dir, f"{split_name}.csv")
+        included_paths = read_paths_csv(csv_path)
+        included_paths_stems = get_file_stem(included_paths)
+        file_paths = glob(os.path.join(img_dir, "*"))
+        _sample_paths = [x for x in file_paths if Path(x).stem in included_paths_stems]
+        # validate filtering
+        assert len(included_paths) == len(_sample_paths)
+        print(f"[info] Loading {len(_sample_paths) = } from {img_dir}")
+        sample_paths.extend(_sample_paths)
 
-    # assert that no files share the same name
-    sample_names = [Path(x).stem for x in sample_paths]
-    assert len(sample_names) == len(set(sample_names))
-
-    # get the included files
-    included_samples = []
-    for csv_path in image_csv_list:
-        included_samples.extend(read_paths_csv(csv_path))
-
-    # filter out the images not included
-    included_samples_stems = get_file_stem(included_samples)
-    _sample_paths = [x for x in sample_paths if Path(x).stem in included_samples_stems]
-
-    # validate filtering
-    assert len(_sample_paths) == len(included_samples_stems)
-
-    return PretrainDataset(_sample_paths, transform)
+    print(f"[info] Using {len(sample_paths) = } total files")
+    return PretrainDataset(sample_paths, transform)
 
 
 def get_classification_pretrain_dataset(image_directory_list: List[str], transform):
@@ -152,7 +144,6 @@ def get_filename_pretrain_dataset(dataset: PretrainDataset, split_name):
 
 def get_pretrain_dataset(
     image_directory_list: List[str],
-    image_csv_list: List[str],
     directory_type: DatasetType,
     transform,
     split_name=None,
@@ -166,9 +157,7 @@ def get_pretrain_dataset(
     ]
 
     if directory_type == DatasetType.CSV:
-        return get_custom_pretrain_dataset(
-            image_directory_list, image_csv_list, transform
-        )
+        return get_custom_pretrain_dataset(image_directory_list, split_name, transform)
     elif directory_type == DatasetType.CLASSIFICATION:
         return get_classification_pretrain_dataset(image_directory_list, transform)
     elif directory_type == DatasetType.FILENAME:
