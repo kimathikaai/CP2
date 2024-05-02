@@ -54,7 +54,7 @@ class MirrorModule(SegmentationModule):
         # fmt:off
         self.log(f"{stage.name.lower()}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
         self.log(f"{stage.name.lower()}_compare_loss", compare_loss, sync_dist=True, on_epoch=True, on_step=True)
-        self.log(f"{stage.name.lower()}_class_loss", compare_loss, sync_dist=True, on_epoch=True, on_step=True)
+        self.log(f"{stage.name.lower()}_class_loss", class_loss, sync_dist=True, on_epoch=True, on_step=True)
         # fmt:on
 
         # update logs
