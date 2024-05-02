@@ -2,10 +2,10 @@ from enum import Enum
 
 import lightning as L
 import torch
-from torch._dynamo.skipfiles import check
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
+from torch._dynamo.skipfiles import check
 from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
                           MetricCollection, Precision, Recall)
 
@@ -21,6 +21,7 @@ class PretrainType(Enum):
     IMAGENET = 1
     CP2 = 2
     MIRROR = 3
+
 
 class Stage(Enum):
     TRAIN = 0
@@ -63,7 +64,7 @@ class SegmentationModule(L.LightningModule):
         elif pretrain_type == PretrainType.MIRROR:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
-            state_dict = checkpoint['state_dict']
+            state_dict = checkpoint["state_dict"]
             print(self.load_state_dict(state_dict, strict=True))
         else:
             raise NotImplementedError(f"{pretrain_type = }")
@@ -132,15 +133,20 @@ class SegmentationModule(L.LightningModule):
 
         return logits, argmax_logits
 
-    def shared_step(self, batch, stage):
-        assert stage in ["train", "val", "test"]
-
+    def shared_step(self, batch, stage: Stage):
         images, masks = batch
         logits, argmax_logits = self.forward(images)
         # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, masks)
 
         # update logs
+        self.log(
+            f"{stage.name.lower()}_loss",
+            loss,
+            sync_dist=True,
+            on_epoch=True,
+            on_step=True,
+        )
         if stage == Stage.TRAIN:
             self.train_metrics.update(argmax_logits, masks)
             self.log_dict(
@@ -148,7 +154,6 @@ class SegmentationModule(L.LightningModule):
                 on_epoch=True,
                 on_step=True,
             )
-            self.log(f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
         elif stage == Stage.VAL:
             self.val_metrics.update(argmax_logits, masks)
             self.log_dict(
@@ -156,18 +161,12 @@ class SegmentationModule(L.LightningModule):
                 on_epoch=True,
                 on_step=False,
             )
-            self.log(
-                f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
-            )
         elif stage == Stage.TEST:
             self.test_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.test_metrics.items()},
                 on_epoch=True,
                 on_step=False,
-            )
-            self.log(
-                f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
             )
 
         return loss
