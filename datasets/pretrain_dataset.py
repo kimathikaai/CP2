@@ -510,8 +510,14 @@ class CutPasteDataModule(L.LightningDataModule):
         #
         train_transform = A.Compose(
             [
-                A.Resize(
-                    self.img_x_size, self.img_y_size, interpolation=cv2.INTER_NEAREST
+                # A.Resize(
+                #     self.img_x_size, self.img_y_size, interpolation=cv2.INTER_NEAREST
+                # ),
+                A.RandomResizedCrop(
+                    size=(self.img_x_size, self.img_y_size),
+                    scale=(0.2, 1.0),
+                    ratio=(3 / 4, 4 / 3),
+                    interpolation=cv2.INTER_NEAREST,
                 ),
                 A.HorizontalFlip(),
                 A.VerticalFlip(),
