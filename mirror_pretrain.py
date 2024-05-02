@@ -158,7 +158,7 @@ def main(args):
     lr_callback = LearningRateMonitor("epoch")
     checkpoint_callback = ModelCheckpoint(
         dirpath=args.run_dir,
-        filename="checkpoint.ckpt",
+        filename="checkpoint",
         save_top_k=1,
         monitor="val_loss_epoch",
         mode="min",
