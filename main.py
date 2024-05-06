@@ -52,6 +52,8 @@ def get_args():
 
     # Loss
     parser.add_argument('--lmbd_dense_loss', default=0.2, type=float)
+    parser.add_argument('--same_foreground', action='store_true', 
+                        help='Whether to use the same foreground images for both bacgrounds')
 
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
@@ -412,22 +414,27 @@ def train(
         zip(train_loader, train_loader_bg0, train_loader_bg1)
     ):
         # data_time.update(time.time() - end)
+        idx_a = 0
+        idx_b = idx_a if args.same_foreground else 1
 
-        images[0] = images[0].to(device)
-        images[1] = images[1].to(device)
+        images[idx_a] = images[idx_a].to(device)
+        images[idx_b] = images[idx_b].to(device)
         bg0 = bg0.to(device)
         bg1 = bg1.to(device)
         # mask_q = mask_q.cuda(args.gpu, non_blocking=True)
         # mask_k = mask_k.cuda(args.gpu, non_blocking=True)
 
+        if args.same_foreground:
+            images[idx_b] = images[idx_a]
+
         mask_q, mask_k = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
-        image_q = images[0] * mask_q.unsqueeze(1) + bg0
-        image_k = images[1] * mask_k.unsqueeze(1) + bg1
+        image_q = images[idx_a] * mask_q.unsqueeze(1) + bg0
+        image_k = images[idx_b] * mask_k.unsqueeze(1) + bg1
 
         # Visualize the first batch
         if rank == 0 and epoch == 0 and i == 0:
             log_imgs = torch.stack(
-                [images[0], images[1], bg0, bg1, image_q, image_k], dim=1
+                [images[idx_a], images[idx_b], bg0, bg1, image_q, image_k], dim=1
             ).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=6, normalize=True)
             wandb.log(
@@ -472,11 +479,11 @@ def train(
             .mean()
             * 100.0
         )
-        loss_o.update(loss.item(), images[0].size(0))
-        loss_i.update(loss_instance.item(), images[0].size(0))
-        loss_d.update(loss_dense.item(), images[0].size(0))
-        acc_ins.update(acc1[0], images[0].size(0))
-        acc_seg.update(acc_dense.item(), images[0].size(0))
+        loss_o.update(loss.item(), images[idx_a].size(0))
+        loss_i.update(loss_instance.item(), images[idx_a].size(0))
+        loss_d.update(loss_dense.item(), images[idx_a].size(0))
+        acc_ins.update(acc1[0], images[idx_a].size(0))
+        acc_seg.update(acc_dense.item(), images[idx_a].size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
