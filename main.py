@@ -50,6 +50,9 @@ def get_args():
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
+    # Loss
+    parser.add_argument('--lmbd_dense_loss', default=0.2, type=float)
+
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
                         help='url used to set up distributed training')
@@ -459,7 +462,7 @@ def train(
             / target_dense.sum(dim=1)
         )
 
-        loss = loss_instance + loss_dense * 0.2
+        loss = loss_instance + loss_dense * args.lmbd_dense_loss
 
         acc1, acc5 = accuracy(output_instance, target_instance, topk=(1, 5))
         acc_dense_pos = output_dense.reshape(output_dense.shape[0], -1).argmax(dim=1)

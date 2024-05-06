@@ -116,7 +116,7 @@ class CP2_MOCO(nn.Module):
         # compute query features
         q = self.encoder_q(im_q)  # queries: NxCx14x14
         q = q.reshape(q.shape[0], q.shape[1], -1)    # queries: NxCx196
-        q_dense = nn.functional.normalize(q, dim=1)
+        q_dense = nn.functional.normalize(q, dim=1) # normalize each pixel
 
         q_pos = nn.functional.normalize(torch.einsum('ncx,nx->nc', [q_dense, mask_q]), dim=1)
 
@@ -134,9 +134,12 @@ class CP2_MOCO(nn.Module):
             k_pos = nn.functional.normalize(torch.einsum('ncx,nx->nc', [k_dense, mask_k]), dim=1)
 
         # dense logits
+        # pixel to pixel cosine similarities
         logits_dense = torch.einsum('ncx,ncy->nxy', [q_dense, k_dense])     #Nx196x196
+        # a correspondenc map between all pixel pairs
         labels_dense = torch.einsum('nx,ny->nxy', [mask_q, mask_k])
         labels_dense = labels_dense.reshape(labels_dense.shape[0], -1)
+        # all the pixels in k versus all the pixels in q
         mask_dense = torch.einsum('x,ny->nxy', [torch.ones(196).cuda(), mask_k])
         mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
 
