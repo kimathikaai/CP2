@@ -143,7 +143,9 @@ def get_classification_pretrain_dataset(image_directory_list: List[str], transfo
 def get_filename_pretrain_dataset(dataset: PretrainDataset, split_name):
     assert split_name in ["train", "val", "test"]
     orig_len = len(dataset)
-    dataset.images_list = [x for x in dataset.images_list if split_name in x]
+    dataset.images_list = [
+        x for x in dataset.images_list if split_name in x and ".csv" not in x
+    ]
     print(f"{orig_len = }, {len(dataset) = }")
     return dataset
 
