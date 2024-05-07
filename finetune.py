@@ -128,6 +128,7 @@ def main(args):
         image_size=args.img_size,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        num_gpus=args.num_gpus,
         train_data_ratio=args.train_data_ratio,
     )
 

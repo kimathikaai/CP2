@@ -27,6 +27,7 @@ class Stage(Enum):
     TRAIN = 0
     VAL = 1
     TEST = 2
+    PSEUDOTEST = 3
 
 
 class SegmentationModule(L.LightningModule):
@@ -115,9 +116,10 @@ class SegmentationModule(L.LightningModule):
                 ),
             ]
         )
-        self.train_metrics = metrics.clone(prefix="train_")
-        self.val_metrics = metrics.clone(prefix="val_")
-        self.test_metrics = metrics.clone(prefix="test_")
+        self.train_metrics = metrics.clone(prefix=f"{Stage.TRAIN.name}_")
+        self.val_metrics = metrics.clone(prefix=f"{Stage.VAL.name}_")
+        self.test_metrics = metrics.clone(prefix=f"{Stage.TEST.name}_")
+        self.pseudo_test_metrics = metrics.clone(prefix=f"{Stage.PSEUDOTEST.name}_")
 
     def forward(self, images):
         logits = self.model(images)
@@ -161,6 +163,13 @@ class SegmentationModule(L.LightningModule):
                 on_epoch=True,
                 on_step=False,
             )
+        elif stage == Stage.PSEUDOTEST:
+            self.pseudo_test_metrics.update(argmax_logits, masks)
+            self.log_dict(
+                {k: v for k, v in self.pseudo_test_metrics.items()},
+                on_epoch=True,
+                on_step=False,
+            )
         elif stage == Stage.TEST:
             self.test_metrics.update(argmax_logits, masks)
             self.log_dict(
@@ -175,7 +184,10 @@ class SegmentationModule(L.LightningModule):
         return self.shared_step(batch, Stage.TRAIN)
 
     def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, Stage.VAL)
+        batch_val = batch[Stage.VAL]
+        batch_pseudo_test = batch[Stage.PSEUDOTEST]
+        self.shared_step(batch_pseudo_test, Stage.PSEUDOTEST)
+        return self.shared_step(batch_val, Stage.VAL)
 
     def test_step(self, batch, batch_idx):
         return self.shared_step(batch, Stage.TEST)
