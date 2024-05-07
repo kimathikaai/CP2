@@ -26,7 +26,7 @@ def get_args():
     parser.add_argument('--config', default='configs/config_finetune.py', help='path to configuration file')
     parser.add_argument("--seed", type=int, default=0, help='Set global seed')
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
-    parser.add_argument("--tags", nargs='+', help='Tags to include for logging')
+    parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
