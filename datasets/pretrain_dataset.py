@@ -161,7 +161,7 @@ def get_pretrain_dataset(
     directory_type: DatasetType,
     transform,
     split_name=None,
-):
+) -> PretrainDataset:
     """
     Returns an initialized PretrainDataset
     """

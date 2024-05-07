@@ -32,6 +32,8 @@ import builder
 import loader
 from datasets.pretrain_dataset import DatasetType, get_pretrain_dataset
 
+DEFAULT_QUEUE_SIZE = 65536
+
 
 def get_args():
     # fmt: off
@@ -52,8 +54,8 @@ def get_args():
 
     # Loss
     parser.add_argument('--lmbd_dense_loss', default=0.2, type=float)
-    parser.add_argument('--same_foreground', action='store_true', 
-                        help='Whether to use the same foreground images for both bacgrounds')
+    parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
+    parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
 
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
@@ -145,13 +147,13 @@ def prepare_data(rank, num_workers, args):
         image_directory_list=args.data_dirs,
         transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
         directory_type=args.directory_type,
-        split_name='train'
+        split_name="train",
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
         transform=transforms.Compose(augmentation_bg),
         directory_type=args.directory_type,
-        split_name='train'
+        split_name="train",
     )
 
     def get_dataloader(dataset, seed):
@@ -189,13 +191,23 @@ def prepare_data(rank, num_workers, args):
 def setup_logger(rank, args):
     logger = logging.getLogger(__name__ + f"-rank{rank}")
     logger.setLevel(level=logging.INFO)
-    handler = logging.FileHandler(os.path.join(args.run_log_dir, f"log-rank{rank}.txt"))
-    handler.setLevel(level=logging.INFO)
     formatter = logging.Formatter(
         "%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d]-2s %(message)s"
     )
+
+    # Rank 0 can output  to console
+    if rank == 0:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        stream_handler.setLevel(level=logging.INFO)
+        logger.addHandler(stream_handler)
+
+    # All logs should be sent to the files
+    handler = logging.FileHandler(os.path.join(args.run_log_dir, f"log-rank{rank}.txt"))
+    handler.setLevel(level=logging.INFO)
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
     return logger
 
 
@@ -229,7 +241,7 @@ def main_worker(rank, args):
             name=args.run_id,
             project=args.wandb_project,
             dir=args.run_log_dir,
-            tags=['pretrain']
+            tags=["pretrain"],
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
@@ -260,12 +272,16 @@ def main_worker(rank, args):
         (train_loader_bg1, train_sampler_bg1),
     ) = data_loaders
     logger.info(f"Initialized data loaders ({rank = })")
+    len_dataset = len(train_loader.dataset)
+    logger.info(f"{len_dataset}")
 
     #
     # Model
     #
     # instantiate the model(it's your own model) and move it to the right device
-    model = builder.CP2_MOCO(cfg)
+    model = builder.CP2_MOCO(
+        cfg, K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE
+    )
     model.cuda(rank)
     logger.info(model)
 
