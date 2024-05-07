@@ -134,6 +134,17 @@ class SegmentationDataModule(L.LightningDataModule):
     ) -> None:
         super().__init__()
 
+        # image information
+        self.image_width = image_width
+        self.image_height = image_height
+        self.image_shape = (3, self.image_height, self.image_width)
+
+        # dataloading
+        self.num_workers = num_workers
+        self.batch_size = batch_size
+        self.num_classes = num_classes
+        self.num_gpus = num_gpus
+
         #
         # Get image and mask paths
         #
@@ -199,17 +210,6 @@ class SegmentationDataModule(L.LightningDataModule):
         self.transform_train = None
         self.transform_val = None
         self.transform_test = None
-
-        # image information
-        self.image_width = image_width
-        self.image_height = image_height
-        self.image_shape = (3, self.image_height, self.image_width)
-
-        # dataloading
-        self.num_workers = num_workers
-        self.batch_size = batch_size
-        self.num_classes = num_classes
-        self.num_gpus = num_gpus
 
     def setup(self, stage=None) -> None:
         self.dataset_train = SegmentationDataset(
