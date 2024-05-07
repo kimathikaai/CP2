@@ -116,10 +116,12 @@ class SegmentationModule(L.LightningModule):
                 ),
             ]
         )
-        self.train_metrics = metrics.clone(prefix=f"{Stage.TRAIN.name}_")
-        self.val_metrics = metrics.clone(prefix=f"{Stage.VAL.name}_")
-        self.test_metrics = metrics.clone(prefix=f"{Stage.TEST.name}_")
-        self.pseudo_test_metrics = metrics.clone(prefix=f"{Stage.PSEUDOTEST.name}_")
+        self.train_metrics = metrics.clone(prefix=f"{Stage.TRAIN.name.lower()}_")
+        self.val_metrics = metrics.clone(prefix=f"{Stage.VAL.name.lower()}_")
+        self.test_metrics = metrics.clone(prefix=f"{Stage.TEST.name.lower()}_")
+        self.pseudo_test_metrics = metrics.clone(
+            prefix=f"{Stage.PSEUDOTEST.name.lower()}_"
+        )
 
     def forward(self, images):
         logits = self.model(images)
@@ -162,6 +164,7 @@ class SegmentationModule(L.LightningModule):
                 {k: v for k, v in self.val_metrics.items()},
                 on_epoch=True,
                 on_step=False,
+                add_dataloader_idx=False
             )
         elif stage == Stage.PSEUDOTEST:
             self.pseudo_test_metrics.update(argmax_logits, masks)
@@ -169,6 +172,7 @@ class SegmentationModule(L.LightningModule):
                 {k: v for k, v in self.pseudo_test_metrics.items()},
                 on_epoch=True,
                 on_step=False,
+                add_dataloader_idx=False
             )
         elif stage == Stage.TEST:
             self.test_metrics.update(argmax_logits, masks)
