@@ -150,6 +150,7 @@ class SegmentationModule(L.LightningModule):
             sync_dist=True,
             on_epoch=True,
             on_step=True,
+            add_dataloader_idx=False
         )
         if stage == Stage.TRAIN:
             self.train_metrics.update(argmax_logits, masks)
