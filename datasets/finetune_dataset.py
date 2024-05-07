@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
 
 from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
-from networks.segment_network import Stage
 
 DATA_RANDOM_SEED = 0
 BASE_TRAIN_SPLIT = 0.7
@@ -254,7 +253,7 @@ class SegmentationDataModule(L.LightningDataModule):
             num_workers=int(self.num_workers * 0.25),
         )
 
-        return {Stage.VAL: dataloader, Stage.PSEUDOTEST: pseudo_test_dataloader}
+        return [dataloader, pseudo_test_dataloader]
 
     def test_dataloader(self):
         return DataLoader(
