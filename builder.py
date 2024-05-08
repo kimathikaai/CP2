@@ -120,7 +120,7 @@ class CP2_MOCO(nn.Module):
         q_dense = nn.functional.normalize(q, dim=1) # normalize each pixel
 
         q_pos = nn.functional.normalize(torch.einsum('ncx,nx->nc', [q_dense, mask_q]), dim=1)
-        q_neg = nn.functional.normalize(torch.einsum('ncx,nx->nc', [q_dense, ~mask_q]), dim=1)
+        q_neg = nn.functional.normalize(torch.einsum('ncx,nx->nc', [q_dense, (~mask_q.bool()).float()]), dim=1)
 
         # compute key features
         with torch.no_grad():  # no gradient to keys
@@ -134,7 +134,7 @@ class CP2_MOCO(nn.Module):
             k = k.reshape(k.shape[0], k.shape[1], -1)    # keys: NxCx196
             k_dense = nn.functional.normalize(k, dim=1)     # NxCx120
             k_pos = nn.functional.normalize(torch.einsum('ncx,nx->nc', [k_dense, mask_k]), dim=1)
-            k_neg = nn.functional.normalize(torch.einsum('ncx,nx->nc', [k_dense, ~mask_k]), dim=1)
+            k_neg = nn.functional.normalize(torch.einsum('ncx,nx->nc', [k_dense, (~mask_k.bool()).float()]), dim=1)
 
         # dense logits
         # pixel to pixel cosine similarities
