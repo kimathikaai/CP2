@@ -6,12 +6,13 @@ import torch.nn as nn
 from mmseg.models import build_segmentor
 
 class CP2_MOCO(nn.Module):
-    def __init__(self, cfg, dim=128, K=65536, m=0.999, T=0.2):
+    def __init__(self, cfg, dim=128, K=65536, m=0.999, T=0.2, include_background=False):
         super(CP2_MOCO, self).__init__()
 
         self.K = K
         self.m = m
         self.T = T
+        self.include_background = include_background
 
         self.encoder_q = build_segmentor(
             cfg.model,
@@ -119,6 +120,7 @@ class CP2_MOCO(nn.Module):
         q_dense = nn.functional.normalize(q, dim=1) # normalize each pixel
 
         q_pos = nn.functional.normalize(torch.einsum('ncx,nx->nc', [q_dense, mask_q]), dim=1)
+        q_neg = nn.functional.normalize(torch.einsum('ncx,nx->nc', [q_dense, ~mask_q]), dim=1)
 
         # compute key features
         with torch.no_grad():  # no gradient to keys
@@ -132,6 +134,7 @@ class CP2_MOCO(nn.Module):
             k = k.reshape(k.shape[0], k.shape[1], -1)    # keys: NxCx196
             k_dense = nn.functional.normalize(k, dim=1)     # NxCx120
             k_pos = nn.functional.normalize(torch.einsum('ncx,nx->nc', [k_dense, mask_k]), dim=1)
+            k_neg = nn.functional.normalize(torch.einsum('ncx,nx->nc', [k_dense, ~mask_k]), dim=1)
 
         # dense logits
         # pixel to pixel cosine similarities
@@ -147,6 +150,13 @@ class CP2_MOCO(nn.Module):
         l_pos = torch.einsum('nc,nc->n', [q_pos, k_pos]).unsqueeze(-1)
         l_neg = torch.einsum('nc,ck->nk', [q_pos, self.queue.clone().detach()])
         logits_moco = torch.cat([l_pos, l_neg], dim=1)
+
+        if self.include_background:
+            # including background pixels
+            l_neg_q = torch.einsum('nc,nc->n', [q_pos, q_neg])
+            l_neg_k = torch.einsum('nc,nc->n', [q_pos, k_neg])
+            logits_moco = torch.cat([l_pos, l_neg, l_neg_q, l_neg_k], dim=1)
+
         labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.long).cuda()
 
         # apply temperature

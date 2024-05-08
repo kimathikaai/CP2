@@ -52,10 +52,11 @@ def get_args():
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
-    # Loss
+    # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_dense_loss', default=0.2, type=float)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
+    parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
 
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
@@ -280,7 +281,9 @@ def main_worker(rank, args):
     #
     # instantiate the model(it's your own model) and move it to the right device
     model = builder.CP2_MOCO(
-        cfg, K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE
+        cfg,
+        K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
+        include_background=args.include_background,
     )
     model.cuda(rank)
     logger.info(model)
