@@ -153,8 +153,8 @@ class CP2_MOCO(nn.Module):
 
         if self.include_background:
             # including background pixels
-            l_neg_q = torch.einsum('nc,nc->n', [q_pos, q_neg])
-            l_neg_k = torch.einsum('nc,nc->n', [q_pos, k_neg])
+            l_neg_q = torch.einsum('nc,nc->n', [q_pos, q_neg]).unsqueeze(-1)
+            l_neg_k = torch.einsum('nc,nc->n', [q_pos, k_neg]).unsqueeze(-1)
             logits_moco = torch.cat([l_pos, l_neg, l_neg_q, l_neg_k], dim=1)
 
         labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.long).cuda()
