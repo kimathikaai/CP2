@@ -49,6 +49,8 @@ def get_args():
 
     parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
+
+    parser.add_argument("--linear_evaluation", action='store_true', help="Freeze the encoder")
     # fmt:on
 
     args = parser.parse_args()
@@ -154,9 +156,12 @@ def main(args):
     custom_callback = CustomCallback(images=images, masks=masks)
 
     # wandb logger
+    tags = ["finetune"] + args.tags
+    if args.linear_evaluation:
+        tags += ["linear-evaluation"]
     wandb_logger = WandbLogger(
         project=args.wandb_project,
-        tags=["finetune"] + args.tags,
+        tags=tags,
         name=args.run_id,
         save_dir=args.run_dir,
     )
@@ -177,6 +182,12 @@ def main(args):
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
     )
+
+    # if linear evaluation freeze backbone
+    if args.linear_evaluation:
+        for param in model.model.backbone.parameters():
+            # not updated by gradient
+            param.requires_grad = False
 
     # setup trainer
     trainer = L.Trainer(
