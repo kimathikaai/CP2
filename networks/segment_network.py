@@ -21,6 +21,8 @@ class PretrainType(Enum):
     IMAGENET = 1
     CP2 = 2
     MIRROR = 3
+    BYOL = 4
+    MOCO = 5
 
 
 class Stage(Enum):

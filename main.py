@@ -31,6 +31,7 @@ from torch.utils.data.distributed import DistributedSampler
 import builder
 import loader
 from datasets.pretrain_dataset import DatasetType, get_pretrain_dataset
+from networks.segment_network import PretrainType
 
 DEFAULT_QUEUE_SIZE = 65536
 
@@ -40,7 +41,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Copy-Paste Contrastive Pretraining on ImageNet')
 
     parser.add_argument('--config', help='path to configuration file')
-    parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
+    parser.add_argument("--run_id", required=True, type=str, help='Unique identifier for a run')
 
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
@@ -53,10 +54,11 @@ def get_args():
                         help='number of data loading workers (default: 32)')
 
     # Custom experimental hyper-parameters
-    parser.add_argument('--lmbd_dense_loss', default=0.2, type=float)
+    parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
+    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
 
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
@@ -100,6 +102,7 @@ def get_args():
     args = parser.parse_args()
     # convert to enum
     args.directory_type = DatasetType[args.directory_type]
+    args.pretrain_type = PretrainType[args.pretrain_type]
 
     return args
 
@@ -237,22 +240,23 @@ def main_worker(rank, args):
     cfg = Config.fromfile(args.config)
 
     # initialize wandb for the main process
+    wandb_run = None
     if rank == 0:
-        run = wandb.init(
+        wandb_run = wandb.init(
             name=args.run_id,
             project=args.wandb_project,
             dir=args.run_log_dir,
             tags=["pretrain"],
         )
         # Add hyperparameters to config
-        wandb.config.update({"hyper-parameters": vars(args)})
-        wandb.config.update({"config_file": cfg})
+        wandb_run.config.update({"hyper-parameters": vars(args)})
+        wandb_run.config.update({"config_file": cfg})
         # define our custom x axis metric
-        wandb.define_metric("step")
+        wandb_run.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
         # under 'train')
-        wandb.define_metric("train/*", step_metric="step")
-        wandb.define_metric("learning_rate", step_metric="step")
+        wandb_run.define_metric("train/*", step_metric="step")
+        wandb_run.define_metric("learning_rate", step_metric="step")
 
     # setup process groups
     setup(rank, args)
@@ -282,10 +286,16 @@ def main_worker(rank, args):
     # instantiate the model(it's your own model) and move it to the right device
     model = builder.CP2_MOCO(
         cfg,
+        m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
         K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
         include_background=args.include_background,
+        lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
+        pretrain_type=args.pretrain_type,
+        device=device,
+        wandb_log=wandb_run,
+        rank=rank,
     )
-    model.cuda(rank)
+    model.to(device)
     logger.info(model)
 
     # Initialize the model pretrained ImageNet weights
@@ -332,8 +342,6 @@ def main_worker(rank, args):
 
     logger.info(f"Initialized optimizer ({rank = })")
 
-    criterion = nn.CrossEntropyLoss().to(device)
-
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
@@ -362,21 +370,17 @@ def main_worker(rank, args):
         lr = adjust_learning_rate(optimizer, epoch, args)
 
         if rank == 0:
-            wandb.log({"epoch": epoch})
-            wandb.log({"learning_rate": lr})
+            model.log({"epoch": epoch})
+            model.log({"learning_rate": lr})
 
         # train for one epoch
         step = train(
             [train_loader, train_loader_bg0, train_loader_bg1],
             model,
-            criterion,
             optimizer,
             epoch,
             args,
-            device,
-            rank,
             step,
-            logger,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -386,6 +390,7 @@ def main_worker(rank, args):
                         # 'arch': args.arch,
                         "state_dict": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
+                        "pretrain_type": args.pretrain_type.name,
                     },
                     is_best=False,
                     filename=os.path.join(
@@ -400,35 +405,14 @@ def main_worker(rank, args):
 def train(
     train_loader_list,
     model,
-    criterion,
     optimizer,
     epoch,
     args,
-    device,
-    rank,
     step,
-    logger,
 ):
-    batch_time = AverageMeter("Time", ":6.3f")
-    # data_time = AverageMeter('Data', ':6.3f')
-    loss_o = AverageMeter("Loss_overall", ":.4f")
-    loss_i = AverageMeter("Loss_ins", ":.4f")
-    loss_d = AverageMeter("Loss_den", ":.4f")
-    acc_ins = AverageMeter("Acc_ins", ":6.2f")
-    acc_seg = AverageMeter("Acc_seg", ":6.2f")
     train_loader, train_loader_bg0, train_loader_bg1 = train_loader_list
-    progress = ProgressMeter(
-        len(train_loader),
-        [batch_time, loss_o, loss_i, loss_d, acc_ins, acc_seg],
-        logger=logger,
-        prefix="Epoch: [{}]".format(epoch),
-    )
-
-    # cre_dense = nn.LogSoftmax(dim=1)
-
     model.train()
 
-    end = time.time()
     for i, (images, bg0, bg1) in enumerate(
         zip(train_loader, train_loader_bg0, train_loader_bg1)
     ):
@@ -436,111 +420,22 @@ def train(
         idx_a = 0
         idx_b = idx_a if args.same_foreground else 1
 
-        images[idx_a] = images[idx_a].to(device)
-        images[idx_b] = images[idx_b].to(device)
-        bg0 = bg0.to(device)
-        bg1 = bg1.to(device)
-        # mask_q = mask_q.cuda(args.gpu, non_blocking=True)
-        # mask_k = mask_k.cuda(args.gpu, non_blocking=True)
+        img_a = images[idx_a].to(model.device)
+        img_b = images[idx_b].to(model.device)
+        bg0 = bg0.to(model.device)
+        bg1 = bg1.to(model.device)
 
-        if args.same_foreground:
-            images[idx_b] = images[idx_a]
-
-        mask_q, mask_k = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
-        image_q = images[idx_a] * mask_q.unsqueeze(1) + bg0
-        image_k = images[idx_b] * mask_k.unsqueeze(1) + bg1
-
-        # Visualize the first batch
-        if rank == 0 and epoch == 0 and i == 0:
-            log_imgs = torch.stack(
-                [images[idx_a], images[idx_b], bg0, bg1, image_q, image_k], dim=1
-            ).flatten(0, 1)
-            log_grid = torchvision.utils.make_grid(log_imgs, nrow=6, normalize=True)
-            wandb.log(
-                {
-                    "train-examples": wandb.Image(
-                        log_grid, caption="Forground Images, Background Images"
-                    )
-                }
-            )
-
-        # compute output
-        stride = args.output_stride
-        (
-            output_instance,
-            output_dense,
-            target_instance,
-            target_dense,
-            mask_dense,
-        ) = model(
-            image_q,
-            image_k,
-            mask_q[:, stride // 2 :: stride, stride // 2 :: stride],
-            mask_k[:, stride // 2 :: stride, stride // 2 :: stride],
-        )
-        loss_instance = criterion(output_instance, target_instance)
-
-        # dense loss of softmax
-        output_dense_log = (-1.0) * nn.LogSoftmax(dim=1)(output_dense)
-        output_dense_log = output_dense_log.reshape(output_dense_log.shape[0], -1)
-        loss_dense = torch.mean(
-            torch.mul(output_dense_log, target_dense).sum(dim=1)
-            / target_dense.sum(dim=1)
-        )
-
-        loss = loss_instance + loss_dense * args.lmbd_dense_loss
-
-        acc1, acc5 = accuracy(output_instance, target_instance, topk=(1, 5))
-        acc_dense_pos = output_dense.reshape(output_dense.shape[0], -1).argmax(dim=1)
-        acc_dense = (
-            target_dense[torch.arange(0, target_dense.shape[0]), acc_dense_pos]
-            .float()
-            .mean()
-            * 100.0
-        )
-        loss_o.update(loss.item(), images[idx_a].size(0))
-        loss_i.update(loss_instance.item(), images[idx_a].size(0))
-        loss_d.update(loss_dense.item(), images[idx_a].size(0))
-        acc_ins.update(acc1[0], images[idx_a].size(0))
-        acc_seg.update(acc_dense.item(), images[idx_a].size(0))
+        visualize = model.rank == 0 and epoch == 0 and i == 0
+        loss = model(img_a, img_b, bg0, bg1, visualize)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        if i % args.print_freq == 0:
-            progress.display(i)
-
-        if rank == 0:
-            wandb.log(
-                {
-                    "step": step,
-                    "train/loss_step": loss_o.val,
-                    "train/loss_ins_step": loss_i.val,
-                    "train/loss_dense_step": loss_d.val,
-                    "train/acc_ins_step": acc_ins.val,
-                    "train/acc_seg_step": acc_seg.val,
-                    "train/batch_time_step": batch_time.val,
-                }
-            )
         step += 1
 
-    if rank == 0:
-        wandb.log(
-            {
-                "train/loss": loss_o.avg,
-                "train/loss_ins": loss_i.avg,
-                "train/loss_dense": loss_d.avg,
-                "train/acc_ins": acc_ins.avg,
-                "train/acc_seg": acc_seg.avg,
-                "train/batch_time": batch_time.avg,
-            }
-        )
+    model.on_train_epoch_end()
 
     return step
 
@@ -549,31 +444,6 @@ def save_checkpoint(state, is_best, filename="checkpoint.ckpt"):
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, "best_checkpoint.pth")
-
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self, name, fmt=":f"):
-        self.name = name
-        self.fmt = fmt
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-    def __str__(self):
-        fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
-        return fmtstr.format(**self.__dict__)
 
 
 class ProgressMeter(object):
@@ -604,23 +474,6 @@ def adjust_learning_rate(optimizer, epoch, args):
     return lr
 
 
-def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
-    with torch.no_grad():
-        maxk = max(topk)
-        batch_size = target.size(0)
-
-        _, pred = output.topk(maxk, 1, True, True)
-        pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-        res = []
-        for k in topk:
-            correct_k = correct[:k].contiguous().view(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
-        return res
-
-
 if __name__ == "__main__":
     # parse command line
     args = get_args()
@@ -632,11 +485,13 @@ if __name__ == "__main__":
     print(f"{args.run_log_dir = }")
 
     print(f"{torch.cuda.device_count() = }")
-    assert args.world_size <= torch.cuda.device_count()
+    # assert args.world_size <= torch.cuda.device_count()
 
     # get the number of workers
     args.num_workers_per_dataset = args.num_workers // (args.world_size * 3)
     print(f"{args.num_workers_per_dataset = }")
+
+    cfg = Config.fromfile(args.config)
 
     # spawn parallel process
     mp.spawn(main_worker, args=[args], nprocs=args.world_size)
