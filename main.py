@@ -287,6 +287,7 @@ def main_worker(rank, args):
         cfg,
         m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
         K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
+        dim=128 if args.pretrain_type == PretrainType.CP2 else 256,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,

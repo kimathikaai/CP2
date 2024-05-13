@@ -58,6 +58,7 @@ class CP2_MOCO(nn.Module):
         self.K = K
         self.m = m
         self.T = T
+        self.dim = dim
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
@@ -76,7 +77,6 @@ class CP2_MOCO(nn.Module):
         # Projection/prediction networks
         backbone_features = 2048 * 7 * 7  # if imgs are 224x224
         hidden_features = 2048
-        out_features = 256
         batch_norm = (
             nn.BatchNorm1d(hidden_features)
             if pretrain_type == PretrainType.BYOL
@@ -86,15 +86,15 @@ class CP2_MOCO(nn.Module):
             nn.Linear(in_features=backbone_features, out_features=hidden_features),
             batch_norm,
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_features, out_features=out_features),
+            nn.Linear(in_features=hidden_features, out_features=self.dim),
         )
         self.encoder_k.projector = copy.deepcopy(self.encoder_q.projector)
 
         self.predictor = nn.Sequential(
-            nn.Linear(in_features=out_features, out_features=hidden_features),
+            nn.Linear(in_features=self.dim, out_features=hidden_features),
             batch_norm,
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_features, out_features=out_features),
+            nn.Linear(in_features=hidden_features, out_features=self.dim),
         )
 
         # Exact copy parameters
@@ -109,7 +109,7 @@ class CP2_MOCO(nn.Module):
             assert isinstance(self.encoder_q.decode_head, FCNHead)
 
         # create the queue
-        self.register_buffer("queue", torch.randn(dim, K))
+        self.register_buffer("queue", torch.randn(self.dim, K))
         self.queue = F.normalize(self.queue, dim=0)
 
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
