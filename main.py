@@ -424,7 +424,7 @@ def train(
         bg1 = bg1.to(model.device)
 
         visualize = epoch == 0 and i == 0
-        loss = model(img_a, img_b, bg0, bg1, visualize)
+        loss = model(img_a=img_a, img_b=img_b, bg0=bg0, bg1=bg1, visualize=visualize)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
