@@ -238,7 +238,7 @@ class CP2_MOCO(nn.Module):
         l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
         l_neg = torch.einsum("nc,ck->nk", [q, self.queue.clone().detach()])
         logits_moco = torch.cat([l_pos, l_neg], dim=1)
-        labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.long).cuda()
+        labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.float).to(self.device)
         # dequeue and enqueue
         self._dequeue_and_enqueue(k)
 
