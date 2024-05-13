@@ -424,7 +424,6 @@ class CP2_MOCO(nn.Module):
                     "train/loss_dense_step": self.loss_d.val,
                     "train/acc_ins_step": self.acc_ins.val,
                     "train/acc_seg_step": self.acc_seg.val,
-                    "train/batch_time_step": self.batch_time.val,
                 }
             )
 
@@ -439,7 +438,6 @@ class CP2_MOCO(nn.Module):
                     "train/loss_dense": self.loss_d.avg,
                     "train/acc_ins": self.acc_ins.avg,
                     "train/acc_seg": self.acc_seg.avg,
-                    "train/batch_time": self.batch_time.avg,
                 }
             )
         self.reset_metrics()
