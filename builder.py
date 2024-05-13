@@ -74,7 +74,7 @@ class CP2_MOCO(nn.Module):
         )
 
         # Projection/prediction networks
-        backbone_features = 2048  # if imgs are 224x224
+        backbone_features = 2048 * 7 * 7  # if imgs are 224x224
         hidden_features = 2048
         out_features = 256
         batch_norm = (
@@ -220,7 +220,7 @@ class CP2_MOCO(nn.Module):
 
         # compute query features
         # fmt:off
-        embd_q = self.encoder_q(img_a)
+        embd_q = self.encoder_q.backbone(img_a)[3]
         q = self.encoder_q.projector(embd_q.flatten(1))
 
         # compute key features
@@ -229,7 +229,7 @@ class CP2_MOCO(nn.Module):
 
             # shuffle for making use of BN
             img_b, idx_unshuffle = self._batch_shuffle_ddp(img_b)
-            k = self.encoder_k.projector(self.encoder_k(img_b).flatten(1))
+            k = self.encoder_k.projector(self.encoder_k.backbone(img_b)[3].flatten(1))
             # undo shuffle
             k = self._batch_unshuffle_ddp(k, idx_unshuffle) 
 
@@ -279,8 +279,8 @@ class CP2_MOCO(nn.Module):
 
         # compute query features
         # fmt:off
-        embd_a = self.encoder_q(img_a)
-        embd_b = self.encoder_q(img_b)
+        embd_a = self.encoder_q.backbone(img_a)[3]
+        embd_b = self.encoder_q.backbone(img_b)[3]
         q_a = self.predictor(self.encoder_q.projector(embd_a.flatten(1)))
         q_b = self.predictor(self.encoder_q.projector(embd_b.flatten(1)))
         # fmt:on
@@ -288,8 +288,8 @@ class CP2_MOCO(nn.Module):
         # compute key features
         with torch.no_grad():
             self._momentum_update_key_encoder()  # update the key encoder
-            k_a = self.encoder_k.projector(self.encoder_k(img_a).flatten(1))
-            k_b = self.encoder_k.projector(self.encoder_k(img_b).flatten(1))
+            k_a = self.encoder_k.projector(self.encoder_k.backbone(img_a)[3].flatten(1))
+            k_b = self.encoder_k.projector(self.encoder_k.backbone(img_b)[3].flatten(1))
 
         loss = (loss_byol(q_a, k_b) + loss_byol(q_b, k_a)).mean()
 
@@ -334,7 +334,7 @@ class CP2_MOCO(nn.Module):
         mask_b = mask_b.reshape(current_bs, -1)
 
         # compute query features
-        q = self.encoder_q(img_a)  # queries: NxCx14x14
+        q = self.encoder_q.backbone(img_a)[3]  # queries: NxCx14x14
         q = q.reshape(q.shape[0], q.shape[1], -1)  # queries: NxCx196
         q_dense = F.normalize(q, dim=1)  # normalize each pixel
 
@@ -348,7 +348,7 @@ class CP2_MOCO(nn.Module):
             self._momentum_update_key_encoder()  # update the key encoder
             # shuffle for making use of BN
             img_b, idx_unshuffle = self._batch_shuffle_ddp(img_b)
-            k = self.encoder_k(img_b)  # keys: NxC
+            k = self.encoder_k.backbone(img_b)[3]  # keys: NxC
             # undo shuffle
             k = self._batch_unshuffle_ddp(k, idx_unshuffle)
 
