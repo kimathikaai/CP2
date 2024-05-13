@@ -201,7 +201,7 @@ class CP2_MOCO(nn.Module):
         elif self.pretrain_type == PretrainType.MOCO:
             return self.forward_moco(**kwargs)
 
-    def forward_moco(self, img_a, img_b, bg0, bg1, visualize):
+    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step):
         def loss_moco(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -215,7 +215,8 @@ class CP2_MOCO(nn.Module):
                     "train-examples": wandb.Image(
                         log_grid, caption=self.pretrain_type.name
                     )
-                }
+                },
+                step=step,
             )
 
         # compute query features
@@ -254,13 +255,14 @@ class CP2_MOCO(nn.Module):
                 {
                     "train/loss_step": self.loss_o.val,
                     "train/acc_ins_step": self.acc_ins.val,
-                }
+                },
+                step=step,
             )
 
 
         return loss
 
-    def forward_byol(self, img_a, img_b, bg0, bg1, visualize):
+    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step):
         def loss_byol(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -274,7 +276,8 @@ class CP2_MOCO(nn.Module):
                     "train-examples": wandb.Image(
                         log_grid, caption=self.pretrain_type.name
                     )
-                }
+                },
+                step=step,
             )
 
         # compute query features
@@ -300,12 +303,13 @@ class CP2_MOCO(nn.Module):
             wandb.log(
                 {
                     "train/loss_step": self.loss_o.val,
-                }
+                },
+                step=step,
             )
 
         return loss
 
-    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize):
+    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step):
         """
         Input:
             im_q: a batch of query images
@@ -325,7 +329,8 @@ class CP2_MOCO(nn.Module):
                     "train-examples": wandb.Image(
                         log_grid, caption=self.pretrain_type.name
                     )
-                }
+                },
+                step=step,
             )
 
         current_bs = img_a.size(0)
@@ -417,29 +422,39 @@ class CP2_MOCO(nn.Module):
         self.acc_seg.update(acc_dense.item(), img_a.size(0))
 
         if self.rank == 0:
-            wandb.log(
-                {
-                    "train/loss_step": self.loss_o.val,
-                    "train/loss_ins_step": self.loss_i.val,
-                    "train/loss_dense_step": self.loss_d.val,
-                    "train/acc_ins_step": self.acc_ins.val,
-                    "train/acc_seg_step": self.acc_seg.val,
-                }
-            )
+            wandb.log({"train/loss_step": self.loss_o.val}, step=step)
+
+            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2]:
+                wandb.log({"train/acc_ins_step": self.acc_ins.val}, step=step)
+
+            if self.pretrain_type == PretrainType.CP2:
+                wandb.log(
+                    {
+                        "train/loss_ins_step": self.loss_i.val,
+                        "train/loss_dense_step": self.loss_d.val,
+                        "train/acc_seg_step": self.acc_seg.val,
+                    },
+                    step=step,
+                )
 
         return loss
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self, step):
         if self.rank == 0:
-            wandb.log(
-                {
-                    "train/loss": self.loss_o.avg,
-                    "train/loss_ins": self.loss_i.avg,
-                    "train/loss_dense": self.loss_d.avg,
-                    "train/acc_ins": self.acc_ins.avg,
-                    "train/acc_seg": self.acc_seg.avg,
-                }
-            )
+            wandb.log({"train/loss": self.loss_o.avg}, step=step)
+
+            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2]:
+                wandb.log({"train/acc_ins": self.acc_ins.avg}, step=step)
+
+            if self.pretrain_type == PretrainType.CP2:
+                wandb.log(
+                    {
+                        "train/loss_ins": self.loss_i.avg,
+                        "train/loss_dense": self.loss_d.avg,
+                        "train/acc_seg": self.acc_seg.avg,
+                    },
+                    step=step,
+                )
         self.reset_metrics()
 
     def reset_metrics(self):
