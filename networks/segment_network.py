@@ -53,9 +53,12 @@ class SegmentationModule(L.LightningModule):
             self.model.backbone.init_weights()
         elif pretrain_type == PretrainType.RANDOM:
             pass
-        elif pretrain_type == PretrainType.CP2:
+        elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
+            assert (
+                checkpoint["pretrain_type"] == pretrain_type.name
+            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
                 x.replace("module.encoder_k.", ""): y
                 for x, y in checkpoint["state_dict"].items()
@@ -152,7 +155,7 @@ class SegmentationModule(L.LightningModule):
             sync_dist=True,
             on_epoch=True,
             on_step=True,
-            add_dataloader_idx=False
+            add_dataloader_idx=False,
         )
         if stage == Stage.TRAIN:
             self.train_metrics.update(argmax_logits, masks)
@@ -167,7 +170,7 @@ class SegmentationModule(L.LightningModule):
                 {k: v for k, v in self.val_metrics.items()},
                 on_epoch=True,
                 on_step=False,
-                add_dataloader_idx=False
+                add_dataloader_idx=False,
             )
         elif stage == Stage.PSEUDOTEST:
             self.pseudo_test_metrics.update(argmax_logits, masks)
@@ -175,7 +178,7 @@ class SegmentationModule(L.LightningModule):
                 {k: v for k, v in self.pseudo_test_metrics.items()},
                 on_epoch=True,
                 on_step=False,
-                add_dataloader_idx=False
+                add_dataloader_idx=False,
             )
         elif stage == Stage.TEST:
             self.test_metrics.update(argmax_logits, masks)
