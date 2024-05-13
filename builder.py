@@ -202,11 +202,6 @@ class CP2_MOCO(nn.Module):
             return self.forward_moco(**kwargs)
 
     def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step):
-        def loss_moco(x, y):
-            x = F.normalize(x, dim=-1, p=2)
-            y = F.normalize(y, dim=-1, p=2)
-            return F.cross_entropy(x / self.T, y).mean()
-
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
@@ -223,6 +218,7 @@ class CP2_MOCO(nn.Module):
         # fmt:off
         embd_q = self.encoder_q.backbone(img_a)[3]
         q = self.encoder_q.projector(embd_q.flatten(1))
+        q = F.normalize(q, dim=-1)
 
         # compute key features
         with torch.no_grad():  # no gradient to keys
@@ -233,16 +229,17 @@ class CP2_MOCO(nn.Module):
             k = self.encoder_k.projector(self.encoder_k.backbone(img_b)[3].flatten(1))
             # undo shuffle
             k = self._batch_unshuffle_ddp(k, idx_unshuffle) 
+            k = F.normalize(k, dim=-1)
 
         # moco logits
         l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
         l_neg = torch.einsum("nc,ck->nk", [q, self.queue.clone().detach()])
         logits_moco = torch.cat([l_pos, l_neg], dim=1)
-        labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.float).to(self.device)
+        labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.long).to(self.device)
         # dequeue and enqueue
         self._dequeue_and_enqueue(k)
 
-        loss = loss_moco(logits_moco, labels_moco)
+        loss = F.cross_entropy(logits_moco/self.T, labels_moco).mean()
 
         acc1, acc5 = self._accuracy(logits_moco, labels_moco, topk=(1, 5))
 
