@@ -425,7 +425,14 @@ def train(
         bg1 = bg1.to(model.device)
 
         visualize = epoch == 0 and i == 0
-        loss = model(img_a=img_a, img_b=img_b, bg0=bg0, bg1=bg1, visualize=visualize)
+        loss = model(
+            img_a=img_a,
+            img_b=img_b,
+            bg0=bg0,
+            bg1=bg1,
+            visualize=visualize,
+            step=step,
+        )
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -434,7 +441,7 @@ def train(
 
         step += 1
 
-    model.module.on_train_epoch_end()
+    model.module.on_train_epoch_end(step)
 
     return step
 
