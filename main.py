@@ -370,8 +370,8 @@ def main_worker(rank, args):
         lr = adjust_learning_rate(optimizer, epoch, args)
 
         if rank == 0:
-            model.log({"epoch": epoch})
-            model.log({"learning_rate": lr})
+            model.module.log({"epoch": epoch})
+            model.module.log({"learning_rate": lr})
 
         # train for one epoch
         step = train(
@@ -425,7 +425,7 @@ def train(
         bg0 = bg0.to(model.device)
         bg1 = bg1.to(model.device)
 
-        visualize = model.rank == 0 and epoch == 0 and i == 0
+        visualize = epoch == 0 and i == 0
         loss = model(img_a, img_b, bg0, bg1, visualize)
 
         # compute gradient and do SGD step
@@ -435,7 +435,7 @@ def train(
 
         step += 1
 
-    model.on_train_epoch_end()
+    model.module.on_train_epoch_end()
 
     return step
 

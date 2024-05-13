@@ -209,7 +209,7 @@ class CP2_MOCO(nn.Module):
             y = F.normalize(y, dim=-1, p=2)
             return F.cross_entropy(x / self.T, y).mean()
 
-        if visualize:
+        if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
             self.log(
@@ -268,7 +268,7 @@ class CP2_MOCO(nn.Module):
             y = F.normalize(y, dim=-1, p=2)
             return 2 - 2 * torch.einsum("nc,nc->n", [x, y])
 
-        if visualize:
+        if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
             self.log(
@@ -319,7 +319,7 @@ class CP2_MOCO(nn.Module):
         img_a = img_a * mask_a.unsqueeze(1) + bg0
         img_b = img_b * mask_b.unsqueeze(1) + bg1
 
-        if visualize:
+        if visualize and self.rank == 0:
             log_imgs = torch.stack([bg0, bg1, img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
             self.log(
