@@ -44,7 +44,6 @@ class CP2_MOCO(nn.Module):
         self,
         cfg,
         rank,
-        wandb_log,
         dim=128,
         K=65536,
         m=0.999,
@@ -62,7 +61,6 @@ class CP2_MOCO(nn.Module):
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
-        self.log = wandb_log
         self.rank = rank
 
         assert pretrain_type in PretrainType
@@ -212,7 +210,7 @@ class CP2_MOCO(nn.Module):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
-            self.log(
+            wandb.log(
                 {
                     "train-examples": wandb.Image(
                         log_grid, caption=self.pretrain_type.name
@@ -252,7 +250,7 @@ class CP2_MOCO(nn.Module):
         self.acc_ins.update(acc1[0], img_a.size(0))
 
         if self.rank == 0:
-            self.log(
+            wandb.log(
                 {
                     "train/loss_step": self.loss_o.val,
                     "train/acc_ins_step": self.acc_ins.val,
@@ -271,7 +269,7 @@ class CP2_MOCO(nn.Module):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
-            self.log(
+            wandb.log(
                 {
                     "train-examples": wandb.Image(
                         log_grid, caption=self.pretrain_type.name
@@ -299,7 +297,7 @@ class CP2_MOCO(nn.Module):
         self.loss_o.update(loss.item(), img_a.size(0))
 
         if self.rank == 0:
-            self.log(
+            wandb.log(
                 {
                     "train/loss_step": self.loss_o.val,
                 }
@@ -322,7 +320,7 @@ class CP2_MOCO(nn.Module):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([bg0, bg1, img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
-            self.log(
+            wandb.log(
                 {
                     "train-examples": wandb.Image(
                         log_grid, caption=self.pretrain_type.name
@@ -419,7 +417,7 @@ class CP2_MOCO(nn.Module):
         self.acc_seg.update(acc_dense.item(), img_a.size(0))
 
         if self.rank == 0:
-            self.log(
+            wandb.log(
                 {
                     "train/loss_step": self.loss_o.val,
                     "train/loss_ins_step": self.loss_i.val,
@@ -434,7 +432,7 @@ class CP2_MOCO(nn.Module):
 
     def on_train_epoch_end(self):
         if self.rank == 0:
-            self.log(
+            wandb.log(
                 {
                     "train/loss": self.loss_o.avg,
                     "train/loss_ins": self.loss_i.avg,

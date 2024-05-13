@@ -240,23 +240,22 @@ def main_worker(rank, args):
     cfg = Config.fromfile(args.config)
 
     # initialize wandb for the main process
-    wandb_run = None
     if rank == 0:
-        wandb_run = wandb.init(
+        wandb.init(
             name=args.run_id,
             project=args.wandb_project,
             dir=args.run_log_dir,
             tags=["pretrain"],
         )
         # Add hyperparameters to config
-        wandb_run.config.update({"hyper-parameters": vars(args)})
-        wandb_run.config.update({"config_file": cfg})
+        wandb.config.update({"hyper-parameters": vars(args)})
+        wandb.config.update({"config_file": cfg})
         # define our custom x axis metric
-        wandb_run.define_metric("step")
+        wandb.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
         # under 'train')
-        wandb_run.define_metric("train/*", step_metric="step")
-        wandb_run.define_metric("learning_rate", step_metric="step")
+        wandb.define_metric("train/*", step_metric="step")
+        wandb.define_metric("learning_rate", step_metric="step")
 
     # setup process groups
     setup(rank, args)
@@ -292,7 +291,6 @@ def main_worker(rank, args):
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
         device=device,
-        wandb_log=wandb_run,
         rank=rank,
     )
     model.to(device)
@@ -370,8 +368,8 @@ def main_worker(rank, args):
         lr = adjust_learning_rate(optimizer, epoch, args)
 
         if rank == 0:
-            model.module.log({"epoch": epoch})
-            model.module.log({"learning_rate": lr})
+            wandb.log({"epoch": epoch})
+            wandb.log({"learning_rate": lr})
 
         # train for one epoch
         step = train(
