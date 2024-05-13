@@ -23,6 +23,7 @@ model = dict(
         num_convs=0,
         in_channels=2048,
         in_index=3,
+        channels=2048,
         num_classes=2,
         norm_cfg=norm_cfg,
     ),
