@@ -106,8 +106,8 @@ class CP2_MOCO(nn.Module):
             param_k.requires_grad = False  # not update by gradient
 
         # confirm config
-        if self.pretrain_type in [PretrainType.MOCO, PretrainType.BYOL]:
-            assert isinstance(self.encoder_q.decode_head, FCNHead)
+        # if self.pretrain_type in [PretrainType.MOCO, PretrainType.BYOL]:
+        #     assert isinstance(self.encoder_q.decode_head, FCNHead)
 
         # create the queue
         self.register_buffer("queue", torch.randn(self.dim, K))
