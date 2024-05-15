@@ -75,7 +75,8 @@ class CP2_MOCO(nn.Module):
         )
 
         # Projection/prediction networks
-        backbone_features = 2048 * 7 * 7  # if imgs are 224x224
+        # backbone_features = 2048 * 7 * 7  # if imgs are 224x224
+        backbone_features = 2048 * 14 * 14  # if imgs are 224x224
         hidden_features = 2048
         batch_norm = (
             nn.BatchNorm1d(hidden_features)
