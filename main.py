@@ -60,6 +60,11 @@ def get_args():
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
 
+    parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
+
+    parser.add_argument('--img_height', default=224, type=int)
+    parser.add_argument('--img_width', default=224, type=int)
+
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
                         help='url used to set up distributed training')
@@ -104,6 +109,12 @@ def get_args():
     args.directory_type = DatasetType[args.directory_type]
     args.pretrain_type = PretrainType[args.pretrain_type]
 
+    # lemon data
+    if args.lemon_data:
+        args.directory_type = DatasetType.CSV
+        args.img_height = 544
+        args.img_width = 1024
+
     return args
 
 
@@ -125,7 +136,7 @@ def prepare_data(rank, num_workers, args):
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
     augmentation = [
-        transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+        transforms.RandomResizedCrop((args.img_height, args.img_width), scale=(0.2, 1.0)),
         transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
         transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
@@ -137,7 +148,7 @@ def prepare_data(rank, num_workers, args):
     # simply use RandomErasing for Copy-Paste implementation:
     # erase a random block of background image and replace the erased positions by foreground
     augmentation_bg = [
-        transforms.RandomResizedCrop(224, scale=(0.2, 1.0)),
+        transforms.RandomResizedCrop((args.img_height, args.img_width), scale=(0.2, 1.0)),
         transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
         transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
