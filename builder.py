@@ -318,12 +318,12 @@ class CP2_MOCO(nn.Module):
         img_b = img_b * mask_b.unsqueeze(1) + bg1
 
         # update map to correct size
-        mask_a[
+        mask_a = mask_a[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
-        mask_b[
+        mask_b = mask_b[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
