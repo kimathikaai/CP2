@@ -48,6 +48,7 @@ class CP2_MOCO(nn.Module):
         K=65536,
         m=0.999,
         T=0.2,
+        output_stride=16,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
         pretrain_type=PretrainType.CP2,
@@ -59,6 +60,7 @@ class CP2_MOCO(nn.Module):
         self.m = m
         self.T = T
         self.dim = dim
+        self.output_stride = output_stride
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
@@ -314,6 +316,18 @@ class CP2_MOCO(nn.Module):
         mask_a, mask_b = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
         img_a = img_a * mask_a.unsqueeze(1) + bg0
         img_b = img_b * mask_b.unsqueeze(1) + bg1
+
+        # update map to correct size
+        mask_a[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
+        mask_b[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
 
         if visualize and self.rank == 0:
             log_imgs = torch.stack([bg0, bg1, img_a, img_b], dim=1).flatten(0, 1)
