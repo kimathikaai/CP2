@@ -299,6 +299,7 @@ def main_worker(rank, args):
         m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
         K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
         dim=128 if args.pretrain_type == PretrainType.CP2 else 256,
+        output_stride=args.output_stride,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
@@ -378,6 +379,7 @@ def main_worker(rank, args):
         train_sampler_bg0.set_epoch(epoch)
         train_sampler_bg1.set_epoch(epoch)
         lr = adjust_learning_rate(optimizer, epoch, args)
+        logger.info(f"Beginning {epoch = }")
 
         if rank == 0:
             wandb.log({"epoch": epoch})
@@ -391,6 +393,7 @@ def main_worker(rank, args):
             epoch,
             args,
             step,
+            logger
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -419,6 +422,7 @@ def train(
     epoch,
     args,
     step,
+    logger,
 ):
     train_loader, train_loader_bg0, train_loader_bg1 = train_loader_list
     model.train()
@@ -444,6 +448,7 @@ def train(
             visualize=visualize,
             step=step,
         )
+        logger.info(f"{epoch = }, {step = }, {loss.item() = }")
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
