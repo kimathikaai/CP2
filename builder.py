@@ -378,8 +378,8 @@ class CP2_MOCO(nn.Module):
         labels_dense = torch.einsum("nx,ny->nxy", [mask_a, mask_b])
         labels_dense = labels_dense.reshape(labels_dense.shape[0], -1)
         # all the pixels in k versus all the pixels in q
-        mask_dense = torch.einsum("x,ny->nxy", [torch.ones(196).cuda(), mask_b])
-        mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
+        # mask_dense = torch.einsum("x,ny->nxy", [torch.ones().cuda(), mask_b])
+        # mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
 
         # moco logits
         l_pos = torch.einsum("nc,nc->n", [q_pos, k_pos]).unsqueeze(-1)
