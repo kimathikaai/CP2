@@ -113,7 +113,7 @@ def get_args():
     if args.lemon_data:
         args.directory_type = DatasetType.CSV
         args.img_height = 544
-        args.img_width = 1024
+        args.img_width = 544
 
     return args
 
