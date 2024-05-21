@@ -112,8 +112,8 @@ def get_args():
     # lemon data
     if args.lemon_data:
         args.directory_type = DatasetType.CSV
-        args.img_height = 544
-        args.img_width = 544
+        args.img_height = 512
+        args.img_width = 512
 
     return args
 
