@@ -128,8 +128,8 @@ class SegmentationDataModule(L.LightningDataModule):
         num_workers: int,
         num_classes: int,
         num_gpus: int,
-        image_width: float,
-        image_height: float,
+        image_width: int,
+        image_height: int,
     ) -> None:
         super().__init__()
 
@@ -277,7 +277,9 @@ class PolypDataModule(SegmentationDataModule):
         num_workers: int,
         num_classes: int,
         num_gpus: int,
-        image_size: int,
+        image_height: int,
+        image_width: int,
+        lemon_data: bool,
     ) -> None:
         super().__init__(
             data_split_type=data_split_type,
@@ -288,60 +290,97 @@ class PolypDataModule(SegmentationDataModule):
             num_workers=num_workers,
             num_classes=num_classes,
             num_gpus=num_gpus,
-            image_height=image_size,
-            image_width=image_size,
+            image_height=image_height,
+            image_width=image_width,
         )
 
         # setup transforms
-        self.image_size = image_size
-        self.transform_train = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.RandomCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-                A.ColorJitter(
-                    brightness=(0.65, 1.35),
-                    contrast=(0.5, 1.5),
-                    saturation=(0, 1),
-                    hue=(-0.1, 0.1),
-                    p=0.75,
-                ),
-                A.GridDistortion(p=0.2),
-                A.GaussNoise(p=0.5),
-            ]
-        )
-        self.transform_val = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.RandomCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-            ]
-        )
-        self.transform_test = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.CenterCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-            ]
-        )
+        if not lemon_data:
+            self.image_size = image_height
+            assert image_height == image_width
+            self.transform_train = A.Compose(
+                [
+                    A.SmallestMaxSize(
+                        max_size=self.image_size,
+                        interpolation=cv2.INTER_NEAREST,
+                        always_apply=True,
+                    ),
+                    A.RandomCrop(
+                        height=self.image_size, width=self.image_size, always_apply=True
+                    ),
+                    A.HorizontalFlip(),
+                    A.VerticalFlip(),
+                    A.ColorJitter(
+                        brightness=(0.65, 1.35),
+                        contrast=(0.5, 1.5),
+                        saturation=(0, 1),
+                        hue=(-0.1, 0.1),
+                        p=0.75,
+                    ),
+                    A.GridDistortion(p=0.2),
+                    A.GaussNoise(p=0.5),
+                ]
+            )
+            self.transform_val = A.Compose(
+                [
+                    A.SmallestMaxSize(
+                        max_size=self.image_size,
+                        interpolation=cv2.INTER_NEAREST,
+                        always_apply=True,
+                    ),
+                    A.RandomCrop(
+                        height=self.image_size, width=self.image_size, always_apply=True
+                    ),
+                    A.HorizontalFlip(),
+                    A.VerticalFlip(),
+                ]
+            )
+            self.transform_test = A.Compose(
+                [
+                    A.SmallestMaxSize(
+                        max_size=self.image_size,
+                        interpolation=cv2.INTER_NEAREST,
+                        always_apply=True,
+                    ),
+                    A.CenterCrop(
+                        height=self.image_size, width=self.image_size, always_apply=True
+                    ),
+                ]
+            )
+        else:
+            self.transform_train = A.Compose(
+                [
+                    A.Resize(
+                        self.image_height,
+                        self.image_width,
+                        interpolation=cv2.INTER_NEAREST,
+                    ),
+                    A.HorizontalFlip(),
+                    A.VerticalFlip(),
+                    A.GridDistortion(p=0.2),
+                    A.RandomBrightnessContrast((0, 0.5), (0, 0.5)),
+                    A.GaussNoise(),
+                ]
+            )
+            self.transform_val = A.Compose(
+                [
+                    A.Resize(
+                        self.image_height,
+                        self.image_width,
+                        interpolation=cv2.INTER_NEAREST,
+                    ),
+                    A.HorizontalFlip(),
+                    A.GridDistortion(p=0.2),
+                ]
+            )
+            self.transform_test = A.Compose(
+                [
+                    A.Resize(
+                        self.image_height,
+                        self.image_width,
+                        interpolation=cv2.INTER_NEAREST,
+                    )
+                ]
+            )
 
         self.setup()

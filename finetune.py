@@ -31,6 +31,7 @@ def get_args():
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
+    parser.add_argument("--data_split_type", type=str, choices=[x.name for x in DataSplitType], default=DataSplitType.FILENAME.name)
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
@@ -39,8 +40,12 @@ def get_args():
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
     parser.add_argument("--use_profiler", action='store_true', help="For debugging")
 
-    parser.add_argument("--img_size", type=int, default=512)
     parser.add_argument("--num_classes", type=int, default=2)
+
+    parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
+
+    parser.add_argument('--img_height', required=True, type=int)
+    parser.add_argument('--img_width', required=True, type=int)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
     parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
@@ -60,6 +65,13 @@ def get_args():
     assert len(args.mask_dirs) == 1
     # convert to enum
     args.pretrain_type = PretrainType[args.pretrain_type]
+    args.data_split_type = DataSplitType[args.data_split_type]
+
+    # lemon data
+    if args.lemon_data:
+        args.img_height = 544
+        args.img_width = 1024
+        args.num_classes = 12
 
     return args
 
@@ -123,11 +135,13 @@ class CustomCallback(Callback):
 def main(args):
     # Setup data loaders
     datamodule = PolypDataModule(
-        data_split_type=DataSplitType.FILENAME,
+        data_split_type=args.data_split_type,
         image_directory=args.img_dirs[0],
         mask_directory=args.mask_dirs[0],
         num_classes=args.num_classes,
-        image_size=args.img_size,
+        image_height=args.img_height,
+        image_width=args.img_width,
+        lemon_data=args.lemon_data,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         num_gpus=args.num_gpus,
