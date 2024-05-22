@@ -44,8 +44,8 @@ def get_args():
 
     parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
 
-    parser.add_argument('--img_height', required=True, type=int)
-    parser.add_argument('--img_width', required=True, type=int)
+    parser.add_argument('--img_height', default=512, type=int)
+    parser.add_argument('--img_width', default=512, type=int)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
     parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
