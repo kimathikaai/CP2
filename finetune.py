@@ -165,7 +165,7 @@ def main(args):
 
     # setup custom callback
     num = 10
-    example_images_masks = [datamodule.dataset_train[i] for i in range(num)]
+    example_images_masks = [datamodule.dataset_test[i] for i in range(num)]
     images = torch.stack([x for x, _ in example_images_masks], dim=0)
     masks = torch.stack([y for _, y in example_images_masks], dim=0)
     custom_callback = CustomCallback(images=images, masks=masks)
