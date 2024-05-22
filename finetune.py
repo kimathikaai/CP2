@@ -154,11 +154,12 @@ def main(args):
 
     # setup callbacks
     lr_callback = LearningRateMonitor("epoch")
+    prefix = 'Binary' if args.num_classes == 2 else 'Multiclass'
     checkpoint_callback = ModelCheckpoint(
         dirpath=args.run_dir,
         filename="{epoch}-{step}-{val_micro_iou:.2f}",
         save_top_k=1,
-        monitor="val_BinaryJaccardIndex",
+        monitor=f"val_{prefix}JaccardIndex",
         mode="max",
     )
 
