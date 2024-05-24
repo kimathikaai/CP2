@@ -185,7 +185,8 @@ def main(args):
     # Setup the model
     #
     cfg = Config.fromfile(args.config)
-    if args.pretrain_path is not None:
+    if args.pretrain_path is not None and args.pretrain_type != PretrainType.IMAGENET:
+        print(f'[INFO] Updating the pretrain_path to {args.pretrain_path = }')
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
 
     cfg.model.decode_head.num_classes = args.num_classes
