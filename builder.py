@@ -123,6 +123,7 @@ class CP2_MOCO(nn.Module):
         self.loss_d = AverageMeter("Loss_den", ":.4f")
         self.acc_ins = AverageMeter("Acc_ins", ":6.2f")
         self.acc_seg = AverageMeter("Acc_seg", ":6.2f")
+        self.cross_image_variance = AverageMeter("Cross_Image_Variance", ":6.2f")
 
     @torch.no_grad()
     def _momentum_update_key_encoder(self):
@@ -351,6 +352,7 @@ class CP2_MOCO(nn.Module):
         q_dense = F.normalize(q, dim=1)  # normalize each pixel
 
         q_pos = F.normalize(torch.einsum("ncx,nx->nc", [q_dense, mask_a]), dim=1)
+        cross_image_variance = q_pos.std(0).mean(0)
         q_neg = F.normalize(
             torch.einsum("ncx,nx->nc", [q_dense, (~mask_a.bool()).float()]), dim=1
         )
@@ -427,6 +429,7 @@ class CP2_MOCO(nn.Module):
         self.loss_d.update(loss_dense.item(), img_a.size(0))
         self.acc_ins.update(acc1[0], img_a.size(0))
         self.acc_seg.update(acc_dense.item(), img_a.size(0))
+        self.cross_image_variance.update(cross_image_variance, img_a.size(0))
 
         if self.rank == 0:
             wandb.log({"train/loss_step": self.loss_o.val})
@@ -440,6 +443,7 @@ class CP2_MOCO(nn.Module):
                         "train/loss_ins_step": self.loss_i.val,
                         "train/loss_dense_step": self.loss_d.val,
                         "train/acc_seg_step": self.acc_seg.val,
+                        "train/cross_image_variance_step": self.cross_image_variance.val,
                     }
                 )
 
@@ -458,6 +462,7 @@ class CP2_MOCO(nn.Module):
                         "train/loss_ins": self.loss_i.avg,
                         "train/loss_dense": self.loss_d.avg,
                         "train/acc_seg": self.acc_seg.avg,
+                        "train/cross_image_variance": self.cross_image_variance.avg,
                     }
                 )
         self.reset_metrics()
@@ -468,6 +473,7 @@ class CP2_MOCO(nn.Module):
         self.loss_d.reset()
         self.acc_ins.reset()
         self.acc_seg.reset()
+        self.cross_image_variance.reset()
 
     def _accuracy(self, output, target, topk=(1,)):
         """Computes the accuracy over the k top predictions for the specified values of k"""
