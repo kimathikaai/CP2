@@ -222,14 +222,14 @@ def main(args):
 
     # log additional parameters
     if trainer.global_rank == 0:
-        wandb_logger.watch(model, log="all", log_graph=True)
+        # wandb_logger.watch(model, log="all", log_graph=True)
         wandb_logger.experiment.config.update({"hyper-parameters": vars(args)})
 
     # Train
     trainer.fit(model, datamodule=datamodule)
 
     # The watch method adds hooks to the model which can be removed at the end of training
-    wandb_logger.experiment.unwatch(model)
+    # wandb_logger.experiment.unwatch(model)
 
     #
     # Test the model
