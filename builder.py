@@ -123,7 +123,12 @@ class CP2_MOCO(nn.Module):
         self.loss_d = AverageMeter("Loss_den", ":.4f")
         self.acc_ins = AverageMeter("Acc_ins", ":6.2f")
         self.acc_seg = AverageMeter("Acc_seg", ":6.2f")
-        self.cross_image_variance = AverageMeter("Cross_Image_Variance", ":6.2f")
+        self.cross_image_variance_source = AverageMeter(
+            "Cross_Image_Variance_Source", ":6.2f"
+        )
+        self.cross_image_variance_target = AverageMeter(
+            "Cross_Image_Variance_Target", ":6.2f"
+        )
 
     @torch.no_grad()
     def _momentum_update_key_encoder(self):
@@ -352,7 +357,7 @@ class CP2_MOCO(nn.Module):
         q_dense = F.normalize(q, dim=1)  # normalize each pixel
 
         q_pos = F.normalize(torch.einsum("ncx,nx->nc", [q_dense, mask_a]), dim=1)
-        cross_image_variance = q_pos.std(0).mean(0)
+        cross_image_variance_source = q_pos.std(0).mean()
         q_neg = F.normalize(
             torch.einsum("ncx,nx->nc", [q_dense, (~mask_a.bool()).float()]), dim=1
         )
@@ -369,6 +374,7 @@ class CP2_MOCO(nn.Module):
             k = k.reshape(k.shape[0], k.shape[1], -1)  # keys: NxCx196
             k_dense = F.normalize(k, dim=1)  # NxCx120
             k_pos = F.normalize(torch.einsum("ncx,nx->nc", [k_dense, mask_b]), dim=1)
+            cross_image_variance_target = k_pos.std(0).mean()
             k_neg = F.normalize(
                 torch.einsum("ncx,nx->nc", [k_dense, (~mask_b.bool()).float()]), dim=1
             )
@@ -429,7 +435,12 @@ class CP2_MOCO(nn.Module):
         self.loss_d.update(loss_dense.item(), img_a.size(0))
         self.acc_ins.update(acc1[0], img_a.size(0))
         self.acc_seg.update(acc_dense.item(), img_a.size(0))
-        self.cross_image_variance.update(cross_image_variance, img_a.size(0))
+        self.cross_image_variance_source.update(
+            cross_image_variance_source, img_a.size(0)
+        )
+        self.cross_image_variance_target.update(
+            cross_image_variance_target, img_a.size(0)
+        )
 
         if self.rank == 0:
             wandb.log({"train/loss_step": self.loss_o.val})
@@ -443,7 +454,8 @@ class CP2_MOCO(nn.Module):
                         "train/loss_ins_step": self.loss_i.val,
                         "train/loss_dense_step": self.loss_d.val,
                         "train/acc_seg_step": self.acc_seg.val,
-                        "train/cross_image_variance_step": self.cross_image_variance.val,
+                        "train/cross_image_variance_source_step": self.cross_image_variance_source.val,
+                        "train/cross_image_variance_target_step": self.cross_image_variance_target.val,
                     }
                 )
 
@@ -462,7 +474,8 @@ class CP2_MOCO(nn.Module):
                         "train/loss_ins": self.loss_i.avg,
                         "train/loss_dense": self.loss_d.avg,
                         "train/acc_seg": self.acc_seg.avg,
-                        "train/cross_image_variance": self.cross_image_variance.avg,
+                        "train/cross_image_variance_source": self.cross_image_variance_source.avg,
+                        "train/cross_image_variance_target": self.cross_image_variance_target.avg,
                     }
                 )
         self.reset_metrics()
@@ -473,7 +486,7 @@ class CP2_MOCO(nn.Module):
         self.loss_d.reset()
         self.acc_ins.reset()
         self.acc_seg.reset()
-        self.cross_image_variance.reset()
+        self.cross_image_variance_source.reset()
 
     def _accuracy(self, output, target, topk=(1,)):
         """Computes the accuracy over the k top predictions for the specified values of k"""
