@@ -65,6 +65,9 @@ def get_args():
     parser.add_argument('--img_height', default=224, type=int)
     parser.add_argument('--img_width', default=224, type=int)
 
+    parser.add_argument('--foreground_min', default=0.5, type=float, help='Minimum size of foreground images')
+    parser.add_argument('--foreground_max', default=0.8, type=float, help='Maximum size of foreground images')
+
     # Distributed training
     parser.add_argument('--dist-url', default='tcp://localhost:10001', type=str,
                         help='url used to set up distributed training')
@@ -136,7 +139,9 @@ def prepare_data(rank, num_workers, args):
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
     augmentation = [
-        transforms.RandomResizedCrop((args.img_height, args.img_width), scale=(0.2, 1.0)),
+        transforms.RandomResizedCrop(
+            (args.img_height, args.img_width), scale=(0.2, 1.0)
+        ),
         transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
         transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
@@ -148,14 +153,21 @@ def prepare_data(rank, num_workers, args):
     # simply use RandomErasing for Copy-Paste implementation:
     # erase a random block of background image and replace the erased positions by foreground
     augmentation_bg = [
-        transforms.RandomResizedCrop((args.img_height, args.img_width), scale=(0.2, 1.0)),
+        transforms.RandomResizedCrop(
+            (args.img_height, args.img_width), scale=(0.2, 1.0)
+        ),
         transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
         transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         # normalize,
-        transforms.RandomErasing(p=1.0, scale=(0.5, 0.8), ratio=(0.8, 1.25), value=0.0),
+        transforms.RandomErasing(
+            p=1.0,
+            scale=(args.foreground_min, args.foreground_max),
+            ratio=(0.8, 1.25),
+            value=0.0,
+        ),
     ]
 
     train_dataset = get_pretrain_dataset(
@@ -393,7 +405,7 @@ def main_worker(rank, args):
             epoch,
             args,
             step,
-            logger
+            logger,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
