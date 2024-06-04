@@ -127,10 +127,22 @@ class SegmentationDataModule(L.LightningDataModule):
         batch_size: int,
         num_workers: int,
         num_classes: int,
-        image_width: float,
-        image_height: float,
+        num_gpus: int,
+        image_width: int,
+        image_height: int,
     ) -> None:
         super().__init__()
+
+        # image information
+        self.image_width = image_width
+        self.image_height = image_height
+        self.image_shape = (3, self.image_height, self.image_width)
+
+        # dataloading
+        self.num_workers = num_workers
+        self.batch_size = batch_size
+        self.num_classes = num_classes
+        self.num_gpus = num_gpus
 
         #
         # Get image and mask paths
@@ -149,7 +161,7 @@ class SegmentationDataModule(L.LightningDataModule):
         assert len(self.mask_paths) == len(self.mask_paths)
 
         # Remove the csv file
-        self.image_paths = [x for x in self.image_paths if '.csv' not in x]
+        self.image_paths = [x for x in self.image_paths if ".csv" not in x]
 
         # Make sure all images have corresponding masks
         self.image_mask_paths = []
@@ -176,19 +188,27 @@ class SegmentationDataModule(L.LightningDataModule):
         self.val_image_mask_paths = split_paths["val"]
         self.test_image_mask_paths = split_paths["test"]
 
+        # Create a dataloader for intermediate testing
+        # https://lightning.ai/docs/torchmetrics/stable/pages/overview.html#metrics-in-distributed-data-parallel-ddp-mode
+        # DDP will add additional samples if your dataset size is not equally divisible by batchsize*numprocessors
+        len_test = len(self.test_image_mask_paths)
+        num_test_samples_per_batch = self.batch_size * self.num_gpus
+        num_batches = len_test // num_test_samples_per_batch
+        num_allowable_samples = num_batches * num_test_samples_per_batch
+        print(f"[Update] Reduced {len_test = } to {num_allowable_samples = }")
+        print(f"{num_test_samples_per_batch = }, {num_batches = }")
+        # Randomly select the test_val samples
+        # Reduce train data
+        val_test_idx = np.random.RandomState(
+            abs(hash(f"test-val-split-{DATA_RANDOM_SEED}")) % (2**31)
+        ).choice(len_test, size=num_allowable_samples, replace=False)
+        self.val_test_image_mask_paths = [
+            self.test_image_mask_paths[i] for i in val_test_idx
+        ]
+
         self.transform_train = None
         self.transform_val = None
         self.transform_test = None
-
-        # image information
-        self.image_width = image_width
-        self.image_height = image_height
-        self.image_shape = (3, self.image_height, self.image_width)
-
-        # dataloading
-        self.num_workers = num_workers
-        self.batch_size = batch_size
-        self.num_classes = num_classes
 
     def setup(self, stage=None) -> None:
         self.dataset_train = SegmentationDataset(
@@ -199,6 +219,9 @@ class SegmentationDataModule(L.LightningDataModule):
         )
         self.dataset_test = SegmentationDataset(
             self.test_image_mask_paths, self.transform_test, self.num_classes
+        )
+        self.dataset_val_test = SegmentationDataset(
+            self.val_test_image_mask_paths, self.transform_test, self.num_classes
         )
 
     def train_dataloader(self):
@@ -212,14 +235,25 @@ class SegmentationDataModule(L.LightningDataModule):
         )
 
     def val_dataloader(self):
-        return DataLoader(
+        dataloader = DataLoader(
             dataset=self.dataset_val,
+            shuffle=False,
+            pin_memory=True,
+            persistent_workers=False,
+            batch_size=self.batch_size,
+            num_workers=int(self.num_workers * 0.15),
+        )
+
+        pseudo_test_dataloader = DataLoader(
+            dataset=self.dataset_val_test,
             shuffle=False,
             pin_memory=True,
             persistent_workers=False,
             batch_size=self.batch_size,
             num_workers=int(self.num_workers * 0.25),
         )
+
+        return [dataloader, pseudo_test_dataloader]
 
     def test_dataloader(self):
         return DataLoader(
@@ -228,7 +262,7 @@ class SegmentationDataModule(L.LightningDataModule):
             pin_memory=True,
             persistent_workers=False,
             batch_size=self.batch_size,
-            num_workers=int(self.num_workers * 0.25),
+            num_workers=int(self.num_workers * 0.1),
         )
 
 
@@ -242,70 +276,111 @@ class PolypDataModule(SegmentationDataModule):
         batch_size: int,
         num_workers: int,
         num_classes: int,
-        image_size: int,
+        num_gpus: int,
+        image_height: int,
+        image_width: int,
+        lemon_data: bool,
     ) -> None:
         super().__init__(
-            data_split_type,
-            image_directory,
-            mask_directory,
-            train_data_ratio,
-            batch_size,
-            num_workers,
-            num_classes,
-            image_size,
-            image_size,
+            data_split_type=data_split_type,
+            image_directory=image_directory,
+            mask_directory=mask_directory,
+            train_data_ratio=train_data_ratio,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            num_classes=num_classes,
+            num_gpus=num_gpus,
+            image_height=image_height,
+            image_width=image_width,
         )
 
         # setup transforms
-        self.image_size = image_size
-        self.transform_train = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.RandomCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-                A.ColorJitter(
-                    brightness=(0.65, 1.35),
-                    contrast=(0.5, 1.5),
-                    saturation=(0, 1),
-                    hue=(-0.1, 0.1),
-                    p=0.75,
-                ),
-                A.GridDistortion(p=0.2),
-                A.GaussNoise(p=0.5),
-            ]
-        )
-        self.transform_val = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.RandomCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-            ]
-        )
-        self.transform_test = A.Compose(
-            [
-                A.SmallestMaxSize(
-                    max_size=self.image_size,
-                    interpolation=cv2.INTER_NEAREST,
-                    always_apply=True,
-                ),
-                A.CenterCrop(
-                    height=self.image_size, width=self.image_size, always_apply=True
-                ),
-            ]
-        )
+        if not lemon_data:
+            self.image_size = image_height
+            assert image_height == image_width
+            self.transform_train = A.Compose(
+                [
+                    A.SmallestMaxSize(
+                        max_size=self.image_size,
+                        interpolation=cv2.INTER_NEAREST,
+                        always_apply=True,
+                    ),
+                    A.RandomCrop(
+                        height=self.image_size, width=self.image_size, always_apply=True
+                    ),
+                    A.HorizontalFlip(),
+                    A.VerticalFlip(),
+                    A.ColorJitter(
+                        brightness=(0.65, 1.35),
+                        contrast=(0.5, 1.5),
+                        saturation=(0, 1),
+                        hue=(-0.1, 0.1),
+                        p=0.75,
+                    ),
+                    A.GridDistortion(p=0.2),
+                    A.GaussNoise(p=0.5),
+                ]
+            )
+            self.transform_val = A.Compose(
+                [
+                    A.SmallestMaxSize(
+                        max_size=self.image_size,
+                        interpolation=cv2.INTER_NEAREST,
+                        always_apply=True,
+                    ),
+                    A.RandomCrop(
+                        height=self.image_size, width=self.image_size, always_apply=True
+                    ),
+                    A.HorizontalFlip(),
+                    A.VerticalFlip(),
+                ]
+            )
+            self.transform_test = A.Compose(
+                [
+                    A.SmallestMaxSize(
+                        max_size=self.image_size,
+                        interpolation=cv2.INTER_NEAREST,
+                        always_apply=True,
+                    ),
+                    A.CenterCrop(
+                        height=self.image_size, width=self.image_size, always_apply=True
+                    ),
+                ]
+            )
+        else:
+            self.transform_train = A.Compose(
+                [
+                    A.Resize(
+                        self.image_height,
+                        self.image_width,
+                        interpolation=cv2.INTER_NEAREST,
+                    ),
+                    A.HorizontalFlip(),
+                    A.VerticalFlip(),
+                    A.GridDistortion(p=0.2),
+                    A.RandomBrightnessContrast((0, 0.5), (0, 0.5)),
+                    A.GaussNoise(),
+                ]
+            )
+            self.transform_val = A.Compose(
+                [
+                    A.Resize(
+                        self.image_height,
+                        self.image_width,
+                        interpolation=cv2.INTER_NEAREST,
+                    ),
+                    A.HorizontalFlip(),
+                    A.GridDistortion(p=0.2),
+                ]
+            )
+            self.transform_test = A.Compose(
+                [
+                    A.Resize(
+                        self.image_height,
+                        self.image_width,
+                        interpolation=cv2.INTER_NEAREST,
+                    )
+                ]
+            )
 
         self.setup()

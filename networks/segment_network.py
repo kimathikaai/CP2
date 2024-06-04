@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
+from torch._dynamo.skipfiles import check
 from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
                           MetricCollection, Precision, Recall)
 
@@ -19,6 +20,16 @@ class PretrainType(Enum):
     RANDOM = 0
     IMAGENET = 1
     CP2 = 2
+    MIRROR = 3
+    BYOL = 4
+    MOCO = 5
+
+
+class Stage(Enum):
+    TRAIN = 0
+    VAL = 1
+    TEST = 2
+    PSEUDOTEST = 3
 
 
 class SegmentationModule(L.LightningModule):
@@ -40,9 +51,14 @@ class SegmentationModule(L.LightningModule):
         if pretrain_type == PretrainType.IMAGENET:
             self.model.backbone.init_cfg.checkpoint = "torchvision://resnet50"
             self.model.backbone.init_weights()
-        elif pretrain_type == PretrainType.CP2:
+        elif pretrain_type == PretrainType.RANDOM:
+            pass
+        elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
+            assert (
+                checkpoint["pretrain_type"] == pretrain_type.name
+            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
                 x.replace("module.encoder_k.", ""): y
                 for x, y in checkpoint["state_dict"].items()
@@ -51,8 +67,11 @@ class SegmentationModule(L.LightningModule):
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             print(self.model.load_state_dict(state_dict, strict=False))
-        elif pretrain_type == PretrainType.RANDOM:
-            pass
+        elif pretrain_type == PretrainType.MIRROR:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            state_dict = checkpoint["state_dict"]
+            print(self.load_state_dict(state_dict, strict=True))
         else:
             raise NotImplementedError(f"{pretrain_type = }")
 
@@ -102,9 +121,12 @@ class SegmentationModule(L.LightningModule):
                 ),
             ]
         )
-        self.train_metrics = metrics.clone(prefix="train_")
-        self.val_metrics = metrics.clone(prefix="val_")
-        self.test_metrics = metrics.clone(prefix="test_")
+        self.train_metrics = metrics.clone(prefix=f"{Stage.TRAIN.name.lower()}_")
+        self.val_metrics = metrics.clone(prefix=f"{Stage.VAL.name.lower()}_")
+        self.test_metrics = metrics.clone(prefix=f"{Stage.TEST.name.lower()}_")
+        self.pseudo_test_metrics = metrics.clone(
+            prefix=f"{Stage.PSEUDOTEST.name.lower()}_"
+        )
 
     def forward(self, images):
         logits = self.model(images)
@@ -120,54 +142,64 @@ class SegmentationModule(L.LightningModule):
 
         return logits, argmax_logits
 
-    def shared_step(self, batch, stage):
-        assert stage in ["train", "val", "test"]
-
+    def shared_step(self, batch, stage: Stage):
         images, masks = batch
         logits, argmax_logits = self.forward(images)
         # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, masks)
 
         # update logs
-        if stage == "train":
+        self.log(
+            f"{stage.name.lower()}_loss",
+            loss,
+            sync_dist=True,
+            on_epoch=True,
+            on_step=True,
+            add_dataloader_idx=False,
+        )
+        if stage == Stage.TRAIN:
             self.train_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.train_metrics.items()},
                 on_epoch=True,
                 on_step=True,
             )
-            self.log(f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=True)
-        elif stage == "val":
+        elif stage == Stage.VAL:
             self.val_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.val_metrics.items()},
                 on_epoch=True,
                 on_step=False,
+                add_dataloader_idx=False,
             )
-            self.log(
-                f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
+        elif stage == Stage.PSEUDOTEST:
+            self.pseudo_test_metrics.update(argmax_logits, masks)
+            self.log_dict(
+                {k: v for k, v in self.pseudo_test_metrics.items()},
+                on_epoch=True,
+                on_step=False,
+                add_dataloader_idx=False,
             )
-        elif stage == "test":
+        elif stage == Stage.TEST:
             self.test_metrics.update(argmax_logits, masks)
             self.log_dict(
                 {k: v for k, v in self.test_metrics.items()},
                 on_epoch=True,
                 on_step=False,
             )
-            self.log(
-                f"{stage}_loss", loss, sync_dist=True, on_epoch=True, on_step=False
-            )
 
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, "train")
+        return self.shared_step(batch, Stage.TRAIN)
 
-    def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, "val")
+    def validation_step(self, batch, batch_idx, dataloader_idx):
+        return self.shared_step(
+            batch, Stage.VAL if dataloader_idx == 0 else Stage.PSEUDOTEST
+        )
 
     def test_step(self, batch, batch_idx):
-        return self.shared_step(batch, "test")
+        return self.shared_step(batch, Stage.TEST)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(

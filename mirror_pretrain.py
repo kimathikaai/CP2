@@ -12,8 +12,9 @@ from lightning.pytorch.callbacks import (Callback, LearningRateMonitor,
 from lightning.pytorch.loggers import WandbLogger
 from mmengine.config import Config
 
-from datasets.finetune_dataset import DataSplitType, PolypDataModule
-from networks.segment_network import PretrainType, SegmentationModule
+from networks.mirror_network import MirrorModule
+from datasets.pretrain_dataset import CutPasteDataModule, MirrorVariant
+from networks.segment_network import PretrainType
 
 
 def get_args():
@@ -29,9 +30,6 @@ def get_args():
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
-    parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
-    parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
-    parser.add_argument("--data_split_type", type=str, choices=[x.name for x in DataSplitType], default=DataSplitType.FILENAME.name)
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
@@ -40,38 +38,36 @@ def get_args():
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
     parser.add_argument("--use_profiler", action='store_true', help="For debugging")
 
+    parser.add_argument("-x", "--img_x_size", type=int, default=512, help='height of image')
+    parser.add_argument("-y", "--img_y_size", type=int, default=512, help='width of image')
     parser.add_argument("--num_classes", type=int, default=2)
 
-    parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
+    # cutpaste
+    parser.add_argument('--softmax_temp', type=float, default=2)
+    parser.add_argument("--lmbd_compare_loss", type=float, default=0.01, help='Loss coefficient')
+    parser.add_argument('--variant', choices=[x.name for x in MirrorVariant], default=MirrorVariant.OUTPUT.name)
+    parser.add_argument("--max_num_patches", type=int, default=1, help='Maximum number of cutpastes')
+    parser.add_argument("--min_area_scale", type=float, default=0.02, help='minimum area of patch')
+    parser.add_argument("--max_area_scale", type=float, default=0.15, help='maximum area of patch')
+    parser.add_argument("--min_aspect_ratio", type=float, default=1/3, help='minimum aspect ratio of patch')
+    parser.add_argument("--max_aspect_ratio", type=float, default=4/3, help='maximum aspect ratio of patch')
+    parser.add_argument("--min_rotation", type=int, default=0, help='minimum rotation angle of patch')
+    parser.add_argument("--max_rotation", type=int, default=0, help='max rotation angle of patch')
 
-    parser.add_argument('--img_height', default=512, type=int)
-    parser.add_argument('--img_width', default=512, type=int)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
     parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
-    parser.add_argument("--epochs", type=int, default=20, help='Number of training epochs') 
+    parser.add_argument("--epochs", type=int, default=200, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
-    parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
-    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
 
-    parser.add_argument("--linear_evaluation", action='store_true', help="Freeze the encoder")
     # fmt:on
 
     args = parser.parse_args()
 
-    # only 1 for now
-    assert len(args.img_dirs) == 1
-    assert len(args.mask_dirs) == 1
+    args.log_dir = os.path.abspath(os.path.expanduser(args.log_dir))
     # convert to enum
-    args.pretrain_type = PretrainType[args.pretrain_type]
-    args.data_split_type = DataSplitType[args.data_split_type]
-
-    # lemon data
-    if args.lemon_data:
-        args.img_height = 544
-        args.img_width = 1024
-        args.num_classes = 12
+    args.variant = MirrorVariant[args.variant]
 
     return args
 
@@ -81,9 +77,10 @@ class CustomCallback(Callback):
     During training, we want to keep track of the learning progress and augmentations
     """
 
-    def __init__(self, images, masks, every_n_epochs=10):
+    def __init__(self, images_a, images_b, masks, every_n_epochs=5):
         super().__init__()
-        self.images = images
+        self.images_a = images_a
+        self.images_b = images_b
         self.masks = masks
         self.every_n_epochs = every_n_epochs
 
@@ -93,8 +90,8 @@ class CustomCallback(Callback):
             and trainer.global_rank == 0
         ):
             # Reconstruct images
-            images = self.images.to(model.device)
-            masks = self.masks.to(model.device)
+            images = torch.cat([self.images_a, self.images_b]).to(model.device)
+            masks = torch.cat([self.masks, self.masks]).to(model.device)
             with torch.no_grad():
                 model.eval()
                 _, masks_pred = model(images)
@@ -102,20 +99,20 @@ class CustomCallback(Callback):
 
             # create torch grids
             image_grid = (
-                torchvision.utils.make_grid(images, nrow=1)
+                torchvision.utils.make_grid(images, nrow=2)
                 .permute(1, 2, 0)
                 .detach()
                 .cpu()
                 .numpy()
             )
             mask_grid = (
-                torchvision.utils.make_grid(masks.unsqueeze(1), nrow=1)
+                torchvision.utils.make_grid(masks.unsqueeze(1), nrow=2)
                 .detach()
                 .cpu()
                 .numpy()
             )
             pred_mask_grid = (
-                torchvision.utils.make_grid(masks_pred.unsqueeze(1), nrow=1)
+                torchvision.utils.make_grid(masks_pred.unsqueeze(1), nrow=2)
                 .detach()
                 .cpu()
                 .numpy()
@@ -133,20 +130,25 @@ class CustomCallback(Callback):
 
 
 def main(args):
+
     # Setup data loaders
-    datamodule = PolypDataModule(
-        data_split_type=args.data_split_type,
-        image_directory=args.img_dirs[0],
-        mask_directory=args.mask_dirs[0],
-        num_classes=args.num_classes,
-        image_height=args.img_height,
-        image_width=args.img_width,
-        lemon_data=args.lemon_data,
+    datamodule = CutPasteDataModule(
+        img_dir_list=args.img_dirs,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        num_gpus=args.num_gpus,
-        train_data_ratio=args.train_data_ratio,
+        num_classes=args.num_classes,
+        max_num_patches=args.max_num_patches,
+        variant=args.variant,
+        img_x_size=args.img_x_size,
+        img_y_size=args.img_y_size,
+        min_area_scale=args.min_area_scale,
+        max_area_scale=args.max_area_scale,
+        min_aspect_ratio=args.min_aspect_ratio,
+        max_aspect_ratio=args.max_aspect_ratio,
+        min_rotation=args.min_rotation,
+        max_rotation=args.max_rotation,
     )
+    print("CPDataModule loaded")
 
     # logging directory
     args.run_dir = os.path.join(args.log_dir, args.run_id)
@@ -154,29 +156,26 @@ def main(args):
 
     # setup callbacks
     lr_callback = LearningRateMonitor("epoch")
-    prefix = 'Binary' if args.num_classes == 2 else 'Multiclass'
     checkpoint_callback = ModelCheckpoint(
         dirpath=args.run_dir,
-        filename="{epoch}-{step}-{val_micro_iou:.2f}",
+        filename="checkpoint",
         save_top_k=1,
-        monitor=f"val_{prefix}JaccardIndex",
-        mode="max",
+        monitor="val_loss_epoch",
+        mode="min",
     )
 
     # setup custom callback
     num = 10
-    example_images_masks = [datamodule.dataset_test[i] for i in range(num)]
-    images = torch.stack([x for x, _ in example_images_masks], dim=0)
-    masks = torch.stack([y for _, y in example_images_masks], dim=0)
-    custom_callback = CustomCallback(images=images, masks=masks)
+    samples = [datamodule.dataset_train[i] for i in range(num)]
+    images_a = torch.stack([a for a,_, _ in samples], dim=0)
+    images_b = torch.stack([b for _,b, _ in samples], dim=0)
+    masks = torch.stack([y for _,_, y in samples], dim=0)
+    custom_callback = CustomCallback(images_a=images_a, images_b=images_b, masks=masks)
 
     # wandb logger
-    tags = ["finetune"] + args.tags
-    if args.linear_evaluation:
-        tags += ["linear-evaluation"]
     wandb_logger = WandbLogger(
         project=args.wandb_project,
-        tags=tags,
+        tags=["pretrain"] + args.tags,
         name=args.run_id,
         save_dir=args.run_dir,
     )
@@ -185,25 +184,18 @@ def main(args):
     # Setup the model
     #
     cfg = Config.fromfile(args.config)
-    if args.pretrain_path is not None and args.pretrain_type != PretrainType.IMAGENET:
-        print(f'[INFO] Updating the pretrain_path to {args.pretrain_path = }')
-        cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
 
     cfg.model.decode_head.num_classes = args.num_classes
-    model = SegmentationModule(
+    model = MirrorModule(
         model_config=cfg,
-        pretrain_type=args.pretrain_type,
+        pretrain_type=PretrainType.IMAGENET,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
+        lmbd_compare_loss=args.lmbd_compare_loss,
+        softmax_temp=args.softmax_temp
     )
-
-    # if linear evaluation freeze backbone
-    if args.linear_evaluation:
-        for param in model.model.backbone.parameters():
-            # not updated by gradient
-            param.requires_grad = False
 
     # setup trainer
     trainer = L.Trainer(
@@ -230,27 +222,7 @@ def main(args):
 
     # The watch method adds hooks to the model which can be removed at the end of training
     # wandb_logger.experiment.unwatch(model)
-
-    #
-    # Test the model
-    #
-    if trainer.global_rank == 0:
-        torch.distributed.destroy_process_group()
-        # Setup a test trainer
-        test_trainer = L.Trainer(
-            devices=1,
-            num_nodes=1,
-            logger=wandb_logger,
-            fast_dev_run=args.fast_dev_run,
-            accelerator="gpu",
-        )
-
-        print(f"{checkpoint_callback.best_model_path = }")
-        test_trainer.test(
-            model,
-            datamodule=datamodule,
-            ckpt_path=checkpoint_callback.best_model_path,
-        )
+    print(f"{checkpoint_callback.best_model_path = }")
 
 
 if __name__ == "__main__":
