@@ -3,10 +3,12 @@
 # Copyright (c) Facebook, Inc. and its affilates. All Rights Reserved
 import copy
 
+import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
@@ -455,15 +457,28 @@ class CP2_MOCO(nn.Module):
                 heatmaps_a.append(hm_a)
                 heatmaps_b.append(hm_b)
 
-            # Log the heatmaps
             heatmaps_a = torch.stack(heatmaps_a).unsqueeze(1)
             heatmaps_b = torch.stack(heatmaps_b).unsqueeze(1)
+
             m_a = mask_a.reshape(current_bs, *hidden_image_size).unsqueeze(1)
             m_b = mask_b.reshape(current_bs, *hidden_image_size).unsqueeze(1)
+
+            # Shift the heatmap range [0,1] to [-1,1]
+            m_a = 2 * m_a - 1
+            m_b = 2 * m_b - 1
+
+            # Log the heatmaps
             log_imgs = torch.stack([m_a, heatmaps_a, m_b, heatmaps_b], dim=1).flatten(
                 0, 1
             )
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
+            # rescale the images
+
+            resize = T.Resize(
+                log_grid.shape[1:] * (224 // hidden_image_size[0]),
+                T.InterpolationMode.NEAREST_EXACT,
+            )
+            log_grid = resize(log_grid)
             wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
 
         # Update logs
