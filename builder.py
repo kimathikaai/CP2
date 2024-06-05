@@ -456,10 +456,10 @@ class CP2_MOCO(nn.Module):
                 heatmaps_b.append(hm_b)
 
             # Log the heatmaps
-            heatmaps_a = torch.stack(heatmaps_a)
-            heatmaps_b = torch.stack(heatmaps_b)
-            m_a = mask_a.reshape(current_bs, *hidden_image_size)
-            m_b = mask_b.reshape(current_bs, *hidden_image_size)
+            heatmaps_a = torch.stack(heatmaps_a).unsqueeze(1)
+            heatmaps_b = torch.stack(heatmaps_b).unsqueeze(1)
+            m_a = mask_a.reshape(current_bs, *hidden_image_size).unsqueeze(1)
+            m_b = mask_b.reshape(current_bs, *hidden_image_size).unsqueeze(1)
             log_imgs = torch.stack([m_a, heatmaps_a, m_b, heatmaps_b], dim=1).flatten(
                 0, 1
             )
