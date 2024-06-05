@@ -4,6 +4,9 @@
 import copy
 
 import cv2
+import matplotlib
+import matplotlib.cm as cm
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -479,6 +482,17 @@ class CP2_MOCO(nn.Module):
                 T.InterpolationMode.NEAREST_EXACT,
             )
             log_grid = resize(log_grid)
+
+            # Grab only the first channel of the grayscale image
+            log_grid = log_grid.detach().cpu().numpy()[0]
+            norm = matplotlib.colors.Normalize(
+                vmin=min(log_grid), vmax=max(log_grid), clip=True
+            )
+            mapper = cm.ScalarMappable(norm=norm, cmap="viridis")
+            log_grid = mapper.to_rgba(log_grid)  # HxWxC
+            # only grab the rgb channels and face channels first
+            log_grid = np.transpose(log_grid[:, :, :3], (2, 0, 1))
+
             wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
 
         # Update logs
