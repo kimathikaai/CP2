@@ -210,7 +210,7 @@ class CP2_MOCO(nn.Module):
         elif self.pretrain_type == PretrainType.MOCO:
             return self.forward_moco(**kwargs)
 
-    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step):
+    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
@@ -266,7 +266,7 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step):
+    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         def loss_byol(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -311,7 +311,7 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step):
+    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         """
         Input:
             im_q: a batch of query images
@@ -347,6 +347,7 @@ class CP2_MOCO(nn.Module):
             )
 
         current_bs = img_a.size(0)
+        hidden_image_size = mask_a.shape[1:]
 
         mask_a = mask_a.reshape(current_bs, -1)
         mask_b = mask_b.reshape(current_bs, -1)
@@ -428,6 +429,42 @@ class CP2_MOCO(nn.Module):
             .mean()
             * 100.0
         )
+
+        #
+        # Create the foreground similarity score heatmap
+        #
+        if new_epoch and self.rank == 0:
+            heatmaps_a = []
+            heatmaps_b = []
+            for i in range(len(logits_dense)):
+                # get similarity scores with respect
+                # order depends on how the labels are generated
+                # i.e., labels_dense = torch.einsum("nx,ny->nxy", [mask_a, mask_b])
+                hm_b = logits_dense[i][mask_a[i].bool(), :]
+                hm_a = logits_dense[i][:, mask_b[i].bool()]
+
+                # take the average scores
+                hm_b = hm_b.sum(0) / hm_b.shape[0]
+                hm_a = hm_a.sum(1) / hm_a.shape[1]
+                assert hm_a.shape == hm_b.shape
+                # reshape to the original image
+                hm_b = hm_b.reshape(hidden_image_size, -1)
+                hm_a = hm_a.reshape(hidden_image_size, -1)
+
+                # append
+                heatmaps_a.append(hm_a)
+                heatmaps_b.append(hm_b)
+
+            # Log the heatmaps
+            heatmaps_a = torch.Tensor(heatmaps_a)
+            heatmaps_b = torch.Tensor(heatmaps_b)
+            m_a = mask_a.reshape(current_bs, hidden_image_size, -1)
+            m_b = mask_b.reshape(current_bs, hidden_image_size, -1)
+            log_imgs = torch.stack([m_a, heatmaps_a, m_b, heatmaps_b], dim=1).flatten(
+                0, 1
+            )
+            log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
+            wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
 
         # Update logs
         self.loss_o.update(loss.item(), img_a.size(0))

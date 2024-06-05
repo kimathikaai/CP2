@@ -454,6 +454,7 @@ def train(
         bg1 = bg1.to(model.device)
 
         visualize = epoch == 0 and i == 0
+        new_epoch = i == 0
         loss = model(
             img_a=img_a,
             img_b=img_b,
@@ -461,6 +462,7 @@ def train(
             bg1=bg1,
             visualize=visualize,
             step=step,
+            new_epoch=new_epoch
         )
         logger.info(f"{epoch = }, {step = }, {loss.item() = }")
 
