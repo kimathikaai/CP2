@@ -448,8 +448,8 @@ class CP2_MOCO(nn.Module):
                 hm_a = hm_a.sum(1) / hm_a.shape[1]
                 assert hm_a.shape == hm_b.shape
                 # reshape to the original image
-                hm_b = hm_b.reshape(hidden_image_size, -1)
-                hm_a = hm_a.reshape(hidden_image_size, -1)
+                hm_b = hm_b.reshape(*hidden_image_size)
+                hm_a = hm_a.reshape(*hidden_image_size)
 
                 # append
                 heatmaps_a.append(hm_a)
@@ -458,8 +458,8 @@ class CP2_MOCO(nn.Module):
             # Log the heatmaps
             heatmaps_a = torch.stack(heatmaps_a)
             heatmaps_b = torch.stack(heatmaps_b)
-            m_a = mask_a.reshape(current_bs, hidden_image_size, -1)
-            m_b = mask_b.reshape(current_bs, hidden_image_size, -1)
+            m_a = mask_a.reshape(current_bs, *hidden_image_size)
+            m_b = mask_b.reshape(current_bs, *hidden_image_size)
             log_imgs = torch.stack([m_a, heatmaps_a, m_b, heatmaps_b], dim=1).flatten(
                 0, 1
             )
