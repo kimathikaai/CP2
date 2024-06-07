@@ -54,7 +54,7 @@ do
 			for seed in 0 1 2
 			do
 				run_id=$(date +"%y%m%d%H%M%S")-$dir-$pretrain_type-$ratio
-				data_dir=${data_dir}/${dir}
+				current_dir=${data_dir}/${dir}
 				CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
 					--pretrain_path $log_dir/$pretrain_run_id/checkpoint.ckpt \
 					--pretrain_type $pretrain_type \
@@ -62,8 +62,8 @@ do
 					--seed $seed\
 					--run_id $run_id\
 					--log_dir $log_dir\
-					--img_dirs $data_dir/Images \
-					--mask_dirs $data_dir/SegmentationImages \
+					--img_dirs $current_dir/Images \
+					--mask_dirs $current_dir/SegmentationImages \
 					--train_data_ratio $ratio \
 					--num_gpus $num_gpus \
 					--num_workers 32 \
