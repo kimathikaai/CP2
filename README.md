@@ -1,53 +1,44 @@
-# CP2: Copy-Paste Contrastive Pretraining for Semantic Segmentation
+# Setup
+1. Create a virtualenv environment and install the required dependencies
+```bash
+cd ~/
+virtualenv  -p /usr/bin/python3.8 myenv
+# Activate the virtual environment
+source myenv/bin/activate
+# Clone the repository
+git clone https://github.com/kimathikaai/CP2.git
+# Install the required packages
+pip install -r CP2/requirements.txt
+```
+2. Setup wandb for remote logging. Ensure you have access to the correct team and project
+```bash
+# After installing wandb via the `requirements.txtx` log in and paste your API key
+wandb login
+```
+3. This repository includes the `mmsegmentation` submodule which will also need to be setup
+```bash
+# Install mmcv using mim
+pip install -U openmim
+mim install mmengine
+mim install 'mmcv>=2.0.0'
+# Install mmsegmentation from the source
+cd ~/CP2/mmsegmentation
+pip install -v -e .
+# '-v' means verbose, or more output
+# '-e' means installing a project in editable mode
+# thus any local modifications made to the code will take effect without reinstallation
+```
+4. Join the `#server` slack channel to communicate what GPUs you'll be using
+5. Get familiar with using [tmux](https://hamvocke.com/blog/a-quick-and-easy-guide-to-tmux/) to run your processes on the server
 
-This repo is the codebase of CP2.
-* [CP2: Copy-Paste Contrastive Pretraining for Semantic Segmentation](https://arxiv.org/abs/2203.11709), in ECCV 2022.
-
-## Pretrained Models
-The pretrained CP2 models are available as below:
-- CP2 from scratch: [cp2-r50-aspp-200ep.pth](https://drive.google.com/file/d/1VUS3PTio-djiPMCWJGA_eqpJM2yRks5W/view?usp=sharing), [cp2-r50-aspp-600ep.pth](https://drive.google.com/file/d/1HioGDeGJaimk9zjKQ1dQqUUPQWBB-w6g/view?usp=sharing)
-- CP2 Quick Tuning (20ep) from MoCo v2 models: [cp2-r50-aspp-820ep.pth](https://drive.google.com/file/d/1hr-SEaX1npAEVv7qmBKmv0e1VdmfJ3Ww/view?usp=sharing), [cp2-vits16-aspp-320ep.pth](https://drive.google.com/file/d/1vLTmBl9qvcwmyS3JFQ3ZHGQTmQ6E-Sct/view?usp=sharing)
-
-## Installation
-The implementation is built on top of [mmseg](https://github.com/open-mmlab/mmsegmentation) and [moco](https://github.com/facebookresearch/moco). Please install with the following steps:
-```
-git clone https://github.com/wangf3014/CP2.git
-cd CP2/
-
-# We recommend installing CP2 with torch==1.7.0 and mmcv==1.3.5
-# Install mmcv (https://github.com/open-mmlab/mmcv). Make sure the mmcv version matches your torch version.
-pip install mmcv-full==1.3.5 -f https://download.openmmlab.com/mmcv/dist/cu101/torch1.7.0/index.html
-pip install -r requirements.txt
-chmod u+x tools/dist_train.sh
-```
-
-## Pretraining
-For pretraining CP2 from scratch, run the following command:
-```
-python main.py --data PATH_TO_YOUR_IMAGENET \
-    --config configs/config_pretrain.py \
-    --epochs 200 --lr 0.015 -b 256
-```
-
-For Quick Tuning, you should first edit the config file `config/config_pretrain.py`, setting the `pretrained_path` to your pretrained backbone, and run the command below:
-```
-python main.py --data PATH_TO_YOUR_IMAGENET \
-    --config configs/config_pretrain.py \
-    --epochs 20 --lr 0.015 -b 256
-```
-
-## Finetuning
-We recommend finetuning on multiple GPUs. For finetuning, you should first specify `pretrain_path` and `data_root` in `config/config_finetune.py`
-```
-# Please specify the NUM_GPU and YOUR_WORK_DIR
-./tools/dist_train.sh configs/config_finetune.py NUM_GPU --work-dir YOUR_WORK_DIR
-```
-If using a part of GPUs on your device (e.g. 4/8), you should run finetuning with the following code:
-```
-CUDA_VISIBLE_DEVICES=0,1,2,3 PORT=23333 ./tools/dist_train.sh configs/config_finetune.py NUM_GPU --work-dir YOUR_WORK_DIR
+# Pre-training and Fine-tuning
+Pre-training and fine-tuning is done on multiple GPUs. Before running a script make sure the GPUs you're using are available and specified using the `CUDA_VISIBLE_DEVICES` environment variable.
+```bash
+# Pre-training and fine-tuning on the polpy datasets
+./scripts/polyp.sh
 ```
 
-## Citation
+# Citation
 ```
 @article{wang2022cp2,
   title={CP2: Copy-Paste Contrastive Pretraining for Semantic Segmentation},
