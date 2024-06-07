@@ -493,8 +493,8 @@ class CP2_MOCO(nn.Module):
             )
             mapper = cm.ScalarMappable(norm=norm, cmap="viridis")
             log_grid = mapper.to_rgba(log_grid)  # HxWxC
-            # only grab the rgb channels and face channels first
-            log_grid = np.transpose(log_grid[:, :, :3], (2, 0, 1))
+            # only grab the rgb channels
+            log_grid = log_grid[:, :, :3]
 
             wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
 
