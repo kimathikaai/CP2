@@ -58,9 +58,9 @@ def get_data_splits(
         ]
         data["val"] = [image_mask_paths[i] for i in idxs[num_train + num_test :]]
     elif data_split_type == DataSplitType.FILENAME:
-        data["train"] = [(x, y) for x, y in image_mask_paths if "train" in x]
-        data["val"] = [(x, y) for x, y in image_mask_paths if "val" in x]
-        data["test"] = [(x, y) for x, y in image_mask_paths if "test" in x]
+        data["train"] = [(x, y) for x, y in image_mask_paths if "train" in Path(x).stem]
+        data["val"] = [(x, y) for x, y in image_mask_paths if "val" in Path(x).stem]
+        data["test"] = [(x, y) for x, y in image_mask_paths if "test" in Path(x).stem]
     else:
         raise NotImplementedError(f"{data_split_type = }")
 
@@ -195,7 +195,7 @@ class SegmentationDataModule(L.LightningDataModule):
         num_test_samples_per_batch = self.batch_size * self.num_gpus
         num_batches = len_test // num_test_samples_per_batch
         num_allowable_samples = num_batches * num_test_samples_per_batch
-        print(f"[Update] Reduced {len_test = } to {num_allowable_samples = }")
+        print(f"[Update] Reduced {len_test = } to {num_allowable_samples = } (This is for pseudo testing)")
         print(f"{num_test_samples_per_batch = }, {num_batches = }")
         # Randomly select the test_val samples
         # Reduce train data

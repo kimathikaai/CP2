@@ -27,7 +27,7 @@ do
 	    --run_id $pretrain_run_id \
 	    --log_dir $log_dir \
 	    --pretrain_type $pretrain_type \
-	    --data_dirs "$data_dir/CVC-ClinicDB/Images" "$polyp_dir/CVC-ColonDB/Images" "$polyp_dir/ETIS-LaribPolypDB/Images" "$polyp_dir/Kvasir-SEG/Images"   \
+	    --data_dirs "$data_dir/CVC-ClinicDB/Images" "$data_dir/CVC-ColonDB/Images" "$data_dir/ETIS-LaribPolypDB/Images" "$data_dir/Kvasir-SEG/Images"   \
 	    --config $pretrain_config_file \
 	    --epochs 200 \
 	    --lr 0.001 \
@@ -54,7 +54,7 @@ do
 			for seed in 0 1 2
 			do
 				run_id=$(date +"%y%m%d%H%M%S")-$dir-$pretrain_type-$ratio
-				data_dir=${base_dir}/${dir}
+				current_dir=${data_dir}/${dir}
 				CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
 					--pretrain_path $log_dir/$pretrain_run_id/checkpoint.ckpt \
 					--pretrain_type $pretrain_type \
@@ -62,13 +62,14 @@ do
 					--seed $seed\
 					--run_id $run_id\
 					--log_dir $log_dir\
-					--img_dirs $data_dir/Images \
-					--mask_dirs $data_dir/SegmentationImages \
+					--img_dirs $current_dir/Images \
+					--mask_dirs $current_dir/SegmentationImages \
 					--train_data_ratio $ratio \
 					--num_gpus $num_gpus \
 					--num_workers 32 \
 					--batch_size 16 \
-					--img_size 352 \
+					--img_height 352 \
+					--img_width 352 \
 					--epochs 100
 			done
 		done

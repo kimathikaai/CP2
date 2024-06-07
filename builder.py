@@ -3,14 +3,18 @@
 # Copyright (c) Facebook, Inc. and its affilates. All Rights Reserved
 import copy
 
+import cv2
+import matplotlib
+import matplotlib.cm as cm
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
-
 from networks.segment_network import PretrainType
 
 
@@ -210,7 +214,7 @@ class CP2_MOCO(nn.Module):
         elif self.pretrain_type == PretrainType.MOCO:
             return self.forward_moco(**kwargs)
 
-    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step):
+    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
@@ -266,7 +270,7 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step):
+    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         def loss_byol(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -311,7 +315,7 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step):
+    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         """
         Input:
             im_q: a batch of query images
@@ -347,6 +351,7 @@ class CP2_MOCO(nn.Module):
             )
 
         current_bs = img_a.size(0)
+        hidden_image_size = mask_a.shape[1:]
 
         mask_a = mask_a.reshape(current_bs, -1)
         mask_b = mask_b.reshape(current_bs, -1)
@@ -428,6 +433,70 @@ class CP2_MOCO(nn.Module):
             .mean()
             * 100.0
         )
+
+        #
+        # Create the foreground similarity score heatmap
+        #
+        if new_epoch and self.rank == 0:
+            heatmaps_a = []
+            heatmaps_b = []
+            for i in range(len(logits_dense)):
+                # get similarity scores with respect
+                # order depends on how the labels are generated
+                # i.e., labels_dense = torch.einsum("nx,ny->nxy", [mask_a, mask_b])
+                hm_b = logits_dense[i][mask_a[i].bool(), :]
+                hm_a = logits_dense[i][:, mask_b[i].bool()]
+
+                # take the average scores
+                hm_b = hm_b.sum(0) / hm_b.shape[0]
+                hm_a = hm_a.sum(1) / hm_a.shape[1]
+                assert hm_a.shape == hm_b.shape
+                # reshape to the original image
+                hm_b = hm_b.reshape(*hidden_image_size)
+                hm_a = hm_a.reshape(*hidden_image_size)
+
+                # append
+                heatmaps_a.append(hm_a)
+                heatmaps_b.append(hm_b)
+
+            heatmaps_a = torch.stack(heatmaps_a).unsqueeze(1)
+            heatmaps_b = torch.stack(heatmaps_b).unsqueeze(1)
+
+            m_a = mask_a.reshape(current_bs, *hidden_image_size).unsqueeze(1)
+            m_b = mask_b.reshape(current_bs, *hidden_image_size).unsqueeze(1)
+
+            # Shift the heatmap range [0,1] to [-1,1]
+            m_a = 2 * m_a - 1
+            m_b = 2 * m_b - 1
+
+            # Log the heatmaps
+            log_imgs = torch.stack([m_a, heatmaps_a, m_b, heatmaps_b], dim=1).flatten(
+                0, 1
+            )
+            log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
+            # rescale the images
+
+            scale_factor = 224 // hidden_image_size[0]
+            grid_h = log_grid.shape[1]
+            grid_w = log_grid.shape[2]
+
+            resize = T.Resize(
+                (grid_h * scale_factor, grid_w * scale_factor),
+                T.InterpolationMode.NEAREST_EXACT,
+            )
+            log_grid = resize(log_grid)
+
+            # Grab only the first channel of the grayscale image
+            log_grid = log_grid.detach().cpu().numpy()[0]
+            norm = matplotlib.colors.Normalize(
+                vmin=log_grid.min(), vmax=log_grid.max(), clip=True
+            )
+            mapper = cm.ScalarMappable(norm=norm, cmap="viridis")
+            log_grid = mapper.to_rgba(log_grid)  # HxWxC
+            # only grab the rgb channels
+            log_grid = log_grid[:, :, :3]
+
+            wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
 
         # Update logs
         self.loss_o.update(loss.item(), img_a.size(0))
