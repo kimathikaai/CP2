@@ -478,7 +478,7 @@ class CP2_MOCO(nn.Module):
             # rescale the images
 
             resize = T.Resize(
-                np.array(log_grid.shape[1:]) * (224 // hidden_image_size[0]),
+                tuple(np.array(log_grid.shape[1:]) * (224 // hidden_image_size[0])),
                 T.InterpolationMode.NEAREST_EXACT,
             )
             log_grid = resize(log_grid)
