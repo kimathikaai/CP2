@@ -28,7 +28,11 @@ pip install -v -e .
 # '-e' means installing a project in editable mode
 # thus any local modifications made to the code will take effect without reinstallation
 ```
-4. Join the `#server` slack channel to communicate what GPUs you'll be using
+4. Join the `#server` slack channel to communicate what GPUs you'll be using and use nvitop to monitor GPU utilization
+```bash
+# Installed through the requirements.txt file
+nvitop
+```
 5. Get familiar with using [tmux](https://hamvocke.com/blog/a-quick-and-easy-guide-to-tmux/) to run your processes on the server
 
 # Pre-training and Fine-tuning
