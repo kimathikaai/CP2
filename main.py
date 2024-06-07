@@ -46,6 +46,7 @@ def get_args():
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
+    parser.add_argument("--wandb_team", type=str, default='critical-ml-dg', help='Wandb team name')
 
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
@@ -267,6 +268,7 @@ def main_worker(rank, args):
         wandb.init(
             name=args.run_id,
             project=args.wandb_project,
+            entity=args.wandb_team,
             dir=args.run_log_dir,
             tags=["pretrain"],
         )
