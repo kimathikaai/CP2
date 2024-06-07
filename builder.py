@@ -489,7 +489,7 @@ class CP2_MOCO(nn.Module):
             # Grab only the first channel of the grayscale image
             log_grid = log_grid.detach().cpu().numpy()[0]
             norm = matplotlib.colors.Normalize(
-                vmin=min(log_grid), vmax=max(log_grid), clip=True
+                vmin=log_grid.min(), vmax=log_grid.max(), clip=True
             )
             mapper = cm.ScalarMappable(norm=norm, cmap="viridis")
             log_grid = mapper.to_rgba(log_grid)  # HxWxC
