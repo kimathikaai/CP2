@@ -195,7 +195,7 @@ class SegmentationDataModule(L.LightningDataModule):
         num_test_samples_per_batch = self.batch_size * self.num_gpus
         num_batches = len_test // num_test_samples_per_batch
         num_allowable_samples = num_batches * num_test_samples_per_batch
-        print(f"[Update] Reduced {len_test = } to {num_allowable_samples = }")
+        print(f"[Update] Reduced {len_test = } to {num_allowable_samples = } (This is for pseudo testing)")
         print(f"{num_test_samples_per_batch = }, {num_batches = }")
         # Randomly select the test_val samples
         # Reduce train data

@@ -15,7 +15,6 @@ import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
-
 from networks.segment_network import PretrainType
 
 
@@ -477,8 +476,12 @@ class CP2_MOCO(nn.Module):
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
             # rescale the images
 
+            scale_factor = 224 // hidden_image_size[0]
+            grid_h = log_grid.shape[1]
+            grid_w = log_grid.shape[2]
+
             resize = T.Resize(
-                tuple(np.array(log_grid.shape[1:]) * (224 // hidden_image_size[0])),
+                (grid_h * scale_factor, grid_w * scale_factor),
                 T.InterpolationMode.NEAREST_EXACT,
             )
             log_grid = resize(log_grid)
