@@ -15,6 +15,7 @@ from mmengine.config import Config
 from networks.mirror_network import MirrorModule
 from datasets.pretrain_dataset import CutPasteDataModule, MirrorVariant
 from networks.segment_network import PretrainType
+from finetune import CustomCallback
 
 
 def get_args():
@@ -29,7 +30,7 @@ def get_args():
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
-    parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
+    parser.add_argument("--data_dirs", nargs='+', help='Folder(s) containing image data')
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
@@ -72,7 +73,7 @@ def get_args():
     return args
 
 
-class CustomCallback(Callback):
+class MirrorCallback(Callback):
     """
     During training, we want to keep track of the learning progress and augmentations
     """
@@ -133,7 +134,7 @@ def main(args):
 
     # Setup data loaders
     datamodule = CutPasteDataModule(
-        img_dir_list=args.img_dirs,
+        img_dir_list=args.data_dirs,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         num_classes=args.num_classes,
@@ -166,11 +167,19 @@ def main(args):
 
     # setup custom callback
     num = 10
-    samples = [datamodule.dataset_train[i] for i in range(num)]
-    images_a = torch.stack([a for a,_, _ in samples], dim=0)
-    images_b = torch.stack([b for _,b, _ in samples], dim=0)
-    masks = torch.stack([y for _,_, y in samples], dim=0)
-    custom_callback = CustomCallback(images_a=images_a, images_b=images_b, masks=masks)
+    if args.variant == MirrorVariant.OUTPUT:
+        samples = [datamodule.dataset_val[i] for i in range(num)]
+        images_a = torch.stack([a for a,_, _ in samples], dim=0)
+        images_b = torch.stack([b for _,b, _ in samples], dim=0)
+        masks = torch.stack([y for _,_, y in samples], dim=0)
+        custom_callback = MirrorCallback(images_a=images_a, images_b=images_b, masks=masks)
+    elif args.variant == MirrorVariant.NONE:
+        samples = [datamodule.dataset_val[i] for i in range(num)]
+        images = torch.stack([x for x, _ in samples], dim=0)
+        masks = torch.stack([y for _, y in samples], dim=0)
+        custom_callback = CustomCallback(images=images, masks=masks)
+    else:
+        raise NotImplementedError(f"{args.variant =}")
 
     # wandb logger
     wandb_logger = WandbLogger(
@@ -194,7 +203,8 @@ def main(args):
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
         lmbd_compare_loss=args.lmbd_compare_loss,
-        softmax_temp=args.softmax_temp
+        softmax_temp=args.softmax_temp,
+        mirror_variant=args.variant
     )
 
     # setup trainer

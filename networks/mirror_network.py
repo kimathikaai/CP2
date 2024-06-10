@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from networks.segment_network import PretrainType, SegmentationModule, Stage
+from datasets.pretrain_dataset import MirrorVariant
 
 
 class MirrorModule(SegmentationModule):
@@ -15,6 +16,7 @@ class MirrorModule(SegmentationModule):
         image_shape,
         lmbd_compare_loss,
         softmax_temp,
+        mirror_variant,
     ):
         super().__init__(
             model_config=model_config,
@@ -32,23 +34,32 @@ class MirrorModule(SegmentationModule):
         # https://intellabs.github.io/distiller/knowledge_distillation.html
         self.softmax_temp = softmax_temp
         self.softmax = nn.Softmax(dim=1)
+        assert mirror_variant in MirrorVariant
+        self.mirror_variant = mirror_variant
 
     def shared_step(self, batch, stage: Stage):
-        s_img, t_img, masks = batch
+        compare_loss = 0
+        if self.mirror_variant == MirrorVariant.OUTPUT:
+            s_img, t_img, masks = batch
+            s_logits, s_argmax = self.forward(s_img)
+            t_logits, t_argmax = self.forward(t_img)
 
-        s_logits, s_argmax = self.forward(s_img)
-        t_logits, t_argmax = self.forward(t_img)
+            all_logits = torch.cat([s_logits, t_logits])
+            all_masks = torch.cat([masks, masks])
+            compare_loss = self.compare_loss(
+                self.softmax(s_logits / self.softmax_temp),
+                self.softmax(t_logits / self.softmax_temp),
+            )
+        elif self.mirror_variant == MirrorVariant.NONE:
+            img, all_masks = batch
+            all_logits, _ = self.forward(img)
+        else:
+            raise NotImplementedError(f"{self.mirror_variant = }")
 
-        all_logits = torch.cat([s_logits, t_logits])
         all_argmax = all_logits.argmax(dim=1)
-        all_masks = torch.cat([masks, masks])
 
         # losses
         class_loss = self.class_loss(all_logits, all_masks)
-        compare_loss = self.compare_loss(
-            self.softmax(s_logits / self.softmax_temp),
-            self.softmax(t_logits / self.softmax_temp),
-        )
         loss = class_loss + self.lmbd_compare_loss * compare_loss
 
         # fmt:off
