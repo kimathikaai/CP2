@@ -193,7 +193,7 @@ class SegmentationModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         return self.shared_step(batch, Stage.TRAIN)
 
-    def validation_step(self, batch, batch_idx, dataloader_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         return self.shared_step(
             batch, Stage.VAL if dataloader_idx == 0 else Stage.PSEUDOTEST
         )
