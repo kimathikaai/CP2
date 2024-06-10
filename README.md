@@ -20,9 +20,12 @@ wandb login
 # Install mmcv using mim
 pip install -U openmim
 mim install mmengine
-mim install 'mmcv>=2.0.0'
-# Install mmsegmentation from the source
+mim install 'mmcv<2.2.0'
+# Install mmsegmentation from the source -> clone the mmsegmentation repo
+rm -r mmsegmentation/
+git clone https://github.com/kimathikaai/mmsegmentation.git
 cd ~/CP2/mmsegmentation
+git checkout develop # Switch to develop branch
 pip install -v -e .
 # '-v' means verbose, or more output
 # '-e' means installing a project in editable mode
