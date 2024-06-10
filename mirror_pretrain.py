@@ -34,6 +34,7 @@ def get_args():
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
+    parser.add_argument("--wandb_team", type=str, default='critical-ml-dg', help='Wandb team name')
     parser.add_argument("--num_gpus", type=int, default=2, help='number of gpus')
     parser.add_argument("--num_workers", type=int, default=0, help='number of workers')
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
@@ -184,6 +185,7 @@ def main(args):
     # wandb logger
     wandb_logger = WandbLogger(
         project=args.wandb_project,
+        entity=args.wandb_team,
         tags=["pretrain"] + args.tags,
         name=args.run_id,
         save_dir=args.run_dir,

@@ -33,9 +33,12 @@ do
 	    --num-workers 32 \
 	    --batch-size 16 \
 	    --world-size $num_gpus \
+        --variant "NONE" \
         --max_num_patches 1 \
         --max_area_scale 0.05 \
-        --min_area_scale 0.005
+        --min_area_scale 0.005 \
+        --img_x_size 512 \
+        --img_y_size 512
 
 	# Get the correct config file
 	# if [[ "$pretrain_type" == "CP2" ]]; then
