@@ -36,7 +36,7 @@ def get_args():
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
     parser.add_argument("--wandb_team", type=str, default='critical-ml-dg', help='Wandb team name')
     parser.add_argument("--num_gpus", type=int, default=2, help='number of gpus')
-    parser.add_argument("--num_workers", type=int, default=0, help='number of workers')
+    parser.add_argument("--num-workers", type=int, default=0, help='number of workers')
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
     parser.add_argument("--use_profiler", action='store_true', help="For debugging")
 
@@ -57,8 +57,8 @@ def get_args():
     parser.add_argument("--max_rotation", type=int, default=0, help='max rotation angle of patch')
 
 
-    parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
-    parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
+    parser.add_argument("--batch-size", type=int, default=10, help='Batch size to train with')
+    parser.add_argument("--lr", type=float, default=0.001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=200, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
@@ -200,7 +200,7 @@ def main(args):
     model = MirrorModule(
         model_config=cfg,
         pretrain_type=PretrainType.IMAGENET,
-        learning_rate=args.learning_rate,
+        learning_rate=args.lr,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,

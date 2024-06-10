@@ -32,7 +32,7 @@ do
 	    --lr 0.001 \
 	    --num-workers 32 \
 	    --batch-size 16 \
-	    --world-size $num_gpus \
+	    --num_gpus $num_gpus \
         --variant "NONE" \
         --max_num_patches 1 \
         --max_area_scale 0.05 \
