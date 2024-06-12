@@ -73,6 +73,7 @@ def get_args():
         args.img_height = 544
         args.img_width = 1024
         args.num_classes = 12
+        args.epochs = 200
 
     return args
 

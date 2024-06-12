@@ -44,6 +44,8 @@ def get_args():
     parser.add_argument("-y", "--img_y_size", type=int, default=512, help='width of image')
     parser.add_argument("--num_classes", type=int, default=2)
 
+    parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
+
     # cutpaste
     parser.add_argument('--softmax_temp', type=float, default=2)
     parser.add_argument("--lmbd_compare_loss", type=float, default=0.01, help='Loss coefficient')
@@ -70,6 +72,15 @@ def get_args():
     args.log_dir = os.path.abspath(os.path.expanduser(args.log_dir))
     # convert to enum
     args.variant = MirrorVariant[args.variant]
+
+    # lemon data
+    if args.lemon_data:
+        args.img_x_size = 544
+        args.img_y_size = 1024
+        args.epochs = 200
+        args.max_area_scale = 0.007
+        args.min_area_scale = 0.0003
+        args.max_num_patches = 1
 
     return args
 
