@@ -71,6 +71,8 @@ class SegmentationModule(L.LightningModule):
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             state_dict = checkpoint["state_dict"]
+            # Remove the conv_seg weights for now (mismatch in num_classes)
+            state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             print(self.load_state_dict(state_dict, strict=True))
         else:
             raise NotImplementedError(f"{pretrain_type = }")
