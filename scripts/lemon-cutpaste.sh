@@ -47,9 +47,9 @@ do
 	echo "Started fine-tuning for ${pretrain_run_id}"
 	for dir in cgs-03
 	do
-		for ratio in 1.0 0.3
+		for ratio in 1.0
 		do
-			for seed in 0 1 2
+			for seed in 0
 			do
 				run_id=$(date +"%y%m%d%H%M%S")-$dir-$pretrain_type-$ratio
                 current_dir=${base_dir_0}/${dir}
