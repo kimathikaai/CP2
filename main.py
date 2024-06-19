@@ -56,6 +56,7 @@ def get_args():
 
     # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
+    parser.add_argument('--lmbd_cp2_instance_loss',default = 1, type =float)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
@@ -316,6 +317,7 @@ def main_worker(rank, args):
         output_stride=args.output_stride,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
+        lmbd_cp2_instance_loss=args.lmbd_cp2_instance_loss,
         pretrain_type=args.pretrain_type,
         device=device,
         rank=rank,

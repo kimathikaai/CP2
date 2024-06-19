@@ -22,7 +22,7 @@ do
 	pretrain_run_id=$(date +"%y%m%d%H%M%S")-pretrain-$pretrain_type
 	echo "Started pre-training for ${pretrain_run_id}"
 	# Start pre-training
-	CUDA_VISIBLE_DEVICES=0,1 python main.py \
+	CUDA_VISIBLE_DEVICES=2,3 python main.py \
 	    --seed 0 \
 	    --run_id $pretrain_run_id \
 	    --log_dir $log_dir \
@@ -34,9 +34,9 @@ do
 	    --num-workers 64 \
 	    --batch-size 32 \
 	    --world-size $num_gpus \
-	    --foreground_min 0.25 \
-	    --foreground_max 0.5 \
-	    --cap_queue
+	    --foreground_min 0.5 \
+	    --foreground_max 0.8 \
+	    --cap_queue --lmbd_cp2_dense_loss 1 --lmbd_cp2_instance_loss 0
 
 	# Get the correct config file
 	# if [[ "$pretrain_type" == "CP2" ]]; then
