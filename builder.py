@@ -55,6 +55,7 @@ class CP2_MOCO(nn.Module):
         output_stride=16,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
+        lmbd_cp2_instance_loss = 1,
         pretrain_type=PretrainType.CP2,
         device=None,
     ):
@@ -67,6 +68,7 @@ class CP2_MOCO(nn.Module):
         self.output_stride = output_stride
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
+        self.lmbd_cp2_instance_loss = lmbd_cp2_instance_loss
         self.device = device
         self.rank = rank
 
@@ -423,7 +425,7 @@ class CP2_MOCO(nn.Module):
             / labels_dense.sum(dim=1)
         )
 
-        loss = loss_instance + loss_dense * self.lmbd_cp2_dense_loss
+        loss = self.lmbd_cp2_instance_loss * loss_instance + loss_dense * self.lmbd_cp2_dense_loss
 
         acc1, acc5 = self._accuracy(logits_moco, labels_moco, topk=(1, 5))
         acc_dense_pos = logits_dense.reshape(logits_dense.shape[0], -1).argmax(dim=1)
