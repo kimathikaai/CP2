@@ -15,6 +15,7 @@ from mmengine.config import Config
 from networks.mirror_network import MirrorModule
 from datasets.pretrain_dataset import CutPasteDataModule, MirrorVariant
 from networks.segment_network import PretrainType
+from finetune import CustomCallback
 
 
 def get_args():
@@ -29,18 +30,21 @@ def get_args():
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
-    parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
+    parser.add_argument("--data_dirs", nargs='+', help='Folder(s) containing image data')
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
+    parser.add_argument("--wandb_team", type=str, default='critical-ml-dg', help='Wandb team name')
     parser.add_argument("--num_gpus", type=int, default=2, help='number of gpus')
-    parser.add_argument("--num_workers", type=int, default=0, help='number of workers')
+    parser.add_argument("--num-workers", type=int, default=0, help='number of workers')
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
     parser.add_argument("--use_profiler", action='store_true', help="For debugging")
 
     parser.add_argument("-x", "--img_x_size", type=int, default=512, help='height of image')
     parser.add_argument("-y", "--img_y_size", type=int, default=512, help='width of image')
     parser.add_argument("--num_classes", type=int, default=2)
+
+    parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
 
     # cutpaste
     parser.add_argument('--softmax_temp', type=float, default=2)
@@ -55,8 +59,8 @@ def get_args():
     parser.add_argument("--max_rotation", type=int, default=0, help='max rotation angle of patch')
 
 
-    parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
-    parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
+    parser.add_argument("--batch-size", type=int, default=10, help='Batch size to train with')
+    parser.add_argument("--lr", type=float, default=0.001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=200, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
@@ -69,10 +73,19 @@ def get_args():
     # convert to enum
     args.variant = MirrorVariant[args.variant]
 
+    # lemon data
+    if args.lemon_data:
+        args.img_x_size = 544
+        args.img_y_size = 1024
+        args.epochs = 200
+        args.max_area_scale = 0.007
+        args.min_area_scale = 0.0003
+        args.max_num_patches = 1
+
     return args
 
 
-class CustomCallback(Callback):
+class MirrorCallback(Callback):
     """
     During training, we want to keep track of the learning progress and augmentations
     """
@@ -133,7 +146,7 @@ def main(args):
 
     # Setup data loaders
     datamodule = CutPasteDataModule(
-        img_dir_list=args.img_dirs,
+        img_dir_list=args.data_dirs,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         num_classes=args.num_classes,
@@ -166,15 +179,24 @@ def main(args):
 
     # setup custom callback
     num = 10
-    samples = [datamodule.dataset_train[i] for i in range(num)]
-    images_a = torch.stack([a for a,_, _ in samples], dim=0)
-    images_b = torch.stack([b for _,b, _ in samples], dim=0)
-    masks = torch.stack([y for _,_, y in samples], dim=0)
-    custom_callback = CustomCallback(images_a=images_a, images_b=images_b, masks=masks)
+    if args.variant == MirrorVariant.OUTPUT:
+        samples = [datamodule.dataset_val[i] for i in range(num)]
+        images_a = torch.stack([a for a,_, _ in samples], dim=0)
+        images_b = torch.stack([b for _,b, _ in samples], dim=0)
+        masks = torch.stack([y for _,_, y in samples], dim=0)
+        custom_callback = MirrorCallback(images_a=images_a, images_b=images_b, masks=masks)
+    elif args.variant == MirrorVariant.NONE:
+        samples = [datamodule.dataset_val[i] for i in range(num)]
+        images = torch.stack([x for x, _ in samples], dim=0)
+        masks = torch.stack([y for _, y in samples], dim=0)
+        custom_callback = CustomCallback(images=images, masks=masks)
+    else:
+        raise NotImplementedError(f"{args.variant =}")
 
     # wandb logger
     wandb_logger = WandbLogger(
         project=args.wandb_project,
+        entity=args.wandb_team,
         tags=["pretrain"] + args.tags,
         name=args.run_id,
         save_dir=args.run_dir,
@@ -186,15 +208,17 @@ def main(args):
     cfg = Config.fromfile(args.config)
 
     cfg.model.decode_head.num_classes = args.num_classes
+    cfg.model.decode_head.contrast = False
     model = MirrorModule(
         model_config=cfg,
         pretrain_type=PretrainType.IMAGENET,
-        learning_rate=args.learning_rate,
+        learning_rate=args.lr,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
         lmbd_compare_loss=args.lmbd_compare_loss,
-        softmax_temp=args.softmax_temp
+        softmax_temp=args.softmax_temp,
+        mirror_variant=args.variant
     )
 
     # setup trainer
