@@ -309,6 +309,7 @@ def main_worker(rank, args):
     # Model
     #
     # instantiate the model(it's your own model) and move it to the right device
+    # TODO: Update the output stride based on the backbone type
     model = builder.CP2_MOCO(
         cfg,
         m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
