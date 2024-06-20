@@ -51,6 +51,7 @@ def get_args():
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
     parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], default=DatasetType.FILENAME.name)
+    parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
@@ -112,6 +113,7 @@ def get_args():
     # convert to enum
     args.directory_type = DatasetType[args.directory_type]
     args.pretrain_type = PretrainType[args.pretrain_type]
+    args.backbone_type = builder.BackboneType[args.backbone_type]
 
     # lemon data
     if args.lemon_data:
@@ -308,6 +310,7 @@ def main_worker(rank, args):
     # Model
     #
     # instantiate the model(it's your own model) and move it to the right device
+    # TODO: Update the output stride based on the backbone type
     model = builder.CP2_MOCO(
         cfg,
         m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
@@ -317,6 +320,7 @@ def main_worker(rank, args):
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
+        backbone_type=args.backbone_type,
         device=device,
         rank=rank,
     )

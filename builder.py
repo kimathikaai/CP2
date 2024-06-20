@@ -2,11 +2,13 @@
 # https://github.com/facebookresearch/moco
 # Copyright (c) Facebook, Inc. and its affilates. All Rights Reserved
 import copy
+from enum import Enum
 
 import cv2
 import matplotlib
 import matplotlib.cm as cm
 import numpy as np
+import segmentation_models_pytorch as smp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,7 +17,17 @@ import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
+
 from networks.segment_network import PretrainType
+
+
+class BackboneType(Enum):
+    """
+    Used to differentiate which backbone architecture is used
+    """
+
+    DEEPLABV3 = 0
+    UNET_ENCODER_ONLY = 1
 
 
 class AverageMeter(object):
@@ -43,6 +55,32 @@ class AverageMeter(object):
         return fmtstr.format(**self.__dict__)
 
 
+class UNET_ENCODER_ONLY(nn.Module):
+    def __init__(self, projector_dim) -> None:
+        super().__init__()
+        self.model = smp.Unet(
+            "resnet50",
+            encoder_weights="imagenet",
+            classes=2,
+            in_channels=3,
+            activation=None,
+            encoder_depth=5,
+            decoder_channels=[256, 128, 64, 32, 16],
+        )
+
+        self.channels = self.model.encoder.out_channels[-1]
+        self.projector = nn.Sequential(
+            nn.Conv2d(self.channels, self.channels, 1),
+            nn.ReLU(),
+            nn.Conv2d(self.channels, projector_dim, 1),
+        )
+
+    def forward(self, x):
+        features = self.model.encoder(x)
+        projection = self.projector(features[-1])
+        return projection
+
+
 class CP2_MOCO(nn.Module):
     def __init__(
         self,
@@ -56,6 +94,7 @@ class CP2_MOCO(nn.Module):
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
         pretrain_type=PretrainType.CP2,
+        backbone_type=BackboneType.DEEPLABV3,
         device=None,
     ):
         super(CP2_MOCO, self).__init__()
@@ -73,36 +112,56 @@ class CP2_MOCO(nn.Module):
         assert pretrain_type in PretrainType
         self.pretrain_type = pretrain_type
 
-        self.encoder_q = build_segmentor(
-            cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
-        )
-        self.encoder_k = build_segmentor(
-            cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
-        )
+        assert backbone_type in BackboneType
+        self.backbone_type = backbone_type
 
-        # Projection/prediction networks
-        # backbone_features = 2048 * 7 * 7  # if imgs are 224x224
-        backbone_features = 2048 * 14 * 14  # if imgs are 224x224
-        hidden_features = 2048
-        batch_norm = (
-            nn.BatchNorm1d(hidden_features)
-            if pretrain_type == PretrainType.BYOL
-            else nn.Identity()
-        )
-        self.encoder_q.projector = nn.Sequential(
-            nn.Linear(in_features=backbone_features, out_features=hidden_features),
-            batch_norm,
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_features, out_features=self.dim),
-        )
-        self.encoder_k.projector = copy.deepcopy(self.encoder_q.projector)
+        # No current handling for both
+        if backbone_type != BackboneType.DEEPLABV3:
+            assert (
+                pretrain_type == PretrainType.CP2
+            ), f"{backbone_type = }, {pretrain_type = }"
 
-        self.predictor = nn.Sequential(
-            nn.Linear(in_features=self.dim, out_features=hidden_features),
-            batch_norm,
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_features, out_features=self.dim),
-        )
+        if backbone_type == BackboneType.DEEPLABV3:
+            self.encoder_q = build_segmentor(
+                cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
+            )
+            self.encoder_k = build_segmentor(
+                cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
+            )
+        elif backbone_type == BackboneType.UNET_ENCODER_ONLY:
+            self.encoder_q = UNET_ENCODER_ONLY(projector_dim=dim)
+            self.encoder_k = UNET_ENCODER_ONLY(projector_dim=dim)
+            # find out the output stride of an image of 544 and 224
+            import pdb
+
+            pdb.set_trace()
+        else:
+            raise NotImplementedError(f"{backbone_type = }")
+
+        if pretrain_type in [PretrainType.BYOL, PretrainType.MOCO]:
+            # Projection/prediction networks
+            # backbone_features = 2048 * 7 * 7  # if imgs are 224x224
+            backbone_features = 2048 * 14 * 14  # if imgs are 224x224
+            hidden_features = 2048
+            batch_norm = (
+                nn.BatchNorm1d(hidden_features)
+                if pretrain_type == PretrainType.BYOL
+                else nn.Identity()
+            )
+            self.encoder_q.projector = nn.Sequential(
+                nn.Linear(in_features=backbone_features, out_features=hidden_features),
+                batch_norm,
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_features, out_features=self.dim),
+            )
+            self.encoder_k.projector = copy.deepcopy(self.encoder_q.projector)
+
+            self.predictor = nn.Sequential(
+                nn.Linear(in_features=self.dim, out_features=hidden_features),
+                batch_norm,
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_features, out_features=self.dim),
+            )
 
         # Exact copy parameters
         for param_q, param_k in zip(
