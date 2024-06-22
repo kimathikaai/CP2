@@ -324,7 +324,9 @@ def main_worker(rank, args):
     )
     model.to(device)
     logger.info(model)
-    wandb.config.update({'output_stride': model.output_stride})
+
+    if rank==0:
+        wandb.config.update({'output_stride': model.output_stride})
 
     if rank==0:
         wandb.config.update({'output_stride': model.output_stride})
