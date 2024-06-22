@@ -105,8 +105,6 @@ def get_args():
     parser.add_argument('--seed', default=0, type=int,
                         help='seed for initializing training. ')
 
-    parser.add_argument('--output-stride', default=16, type=int,
-                        help='output stride of encoder')
     # fmt: on
 
     args = parser.parse_args()
@@ -310,13 +308,11 @@ def main_worker(rank, args):
     # Model
     #
     # instantiate the model(it's your own model) and move it to the right device
-    # TODO: Update the output stride based on the backbone type
     model = builder.CP2_MOCO(
         cfg,
         m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
         K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
         dim=128 if args.pretrain_type == PretrainType.CP2 else 256,
-        output_stride=args.output_stride,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
@@ -326,6 +322,7 @@ def main_worker(rank, args):
     )
     model.to(device)
     logger.info(model)
+    wandb.config.update({'output_stride': model.output_stride})
 
     # Initialize the model pretrained ImageNet weights
     model.encoder_q.backbone.init_weights()

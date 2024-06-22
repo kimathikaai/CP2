@@ -91,7 +91,6 @@ class CP2_MOCO(nn.Module):
         K=65536,
         m=0.999,
         T=0.2,
-        output_stride=16,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
         pretrain_type=PretrainType.CP2,
@@ -104,7 +103,6 @@ class CP2_MOCO(nn.Module):
         self.m = m
         self.T = T
         self.dim = dim
-        self.output_stride = output_stride
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
@@ -132,12 +130,14 @@ class CP2_MOCO(nn.Module):
         elif backbone_type == BackboneType.UNET_ENCODER_ONLY:
             self.encoder_q = UNET_ENCODER_ONLY(projector_dim=dim)
             self.encoder_k = UNET_ENCODER_ONLY(projector_dim=dim)
-            # find out the output stride of an image of 544 and 224
-            import pdb
-
-            pdb.set_trace()
         else:
             raise NotImplementedError(f"{backbone_type = }")
+
+        # Get the output stride
+        test_sample = torch.rand(1, 3, 224, 224)
+        output_shape = self.encoder_q(test_sample).shape
+        self.output_stride = int(test_sample.shape[2] / output_shape[2])
+        print(f"{self.output_stride = }")
 
         if pretrain_type in [PretrainType.BYOL, PretrainType.MOCO]:
             # Projection/prediction networks
