@@ -328,9 +328,6 @@ def main_worker(rank, args):
     if rank==0:
         wandb.config.update({'output_stride': model.output_stride})
 
-    if rank==0:
-        wandb.config.update({'output_stride': model.output_stride})
-
     # import copy
     # # Initialize the model pretrained ImageNet weights
     # weights_before_q = copy.deepcopy(model.encoder_q.backbone)
