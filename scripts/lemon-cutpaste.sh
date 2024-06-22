@@ -34,6 +34,7 @@ do
 	    --batch-size 16 \
 	    --num_gpus $num_gpus \
         --variant "NONE" \
+        --backbone_type 'UNET_ENCODER_ONLY' \
         --lemon_data
 
 	# Get the correct config file

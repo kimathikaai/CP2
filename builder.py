@@ -69,6 +69,7 @@ class UNET_ENCODER_ONLY(nn.Module):
         )
 
         self.channels = self.model.encoder.out_channels[-1]
+        self.backbone = self.encoder
         self.projector = nn.Sequential(
             nn.Conv2d(self.channels, self.channels, 1),
             nn.ReLU(),
@@ -76,7 +77,7 @@ class UNET_ENCODER_ONLY(nn.Module):
         )
 
     def forward(self, x):
-        features = self.model.encoder(x)
+        features = self.backbone(x)
         projection = self.projector(features[-1])
         return projection
 
