@@ -69,7 +69,7 @@ class UNET_ENCODER_ONLY(nn.Module):
         )
 
         self.channels = self.model.encoder.out_channels[-1]
-        self.backbone = self.encoder
+        self.backbone = self.model.encoder
         self.projector = nn.Sequential(
             nn.Conv2d(self.channels, self.channels, 1),
             nn.ReLU(),
