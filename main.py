@@ -418,7 +418,7 @@ def main_worker(rank, args):
                         "state_dict": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "pretrain_type": args.pretrain_type.name,
-                        "backbone_type": args.backbone_type
+                        "backbone_type": args.backbone_type.name
                     },
                     is_best=False,
                     filename=os.path.join(
