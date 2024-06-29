@@ -55,6 +55,46 @@ class AverageMeter(object):
         return fmtstr.format(**self.__dict__)
 
 
+class UNET_TRUNCATED(nn.Module):
+    def __init__(self, projector_dim, num_decoder_blocks=2) -> None:
+        super().__init__()
+        decoder_channels=[256, 128, 64, 32, 16]
+        self.model = smp.Unet(
+            "resnet50",
+            encoder_weights="imagenet",
+            classes=2,
+            in_channels=3,
+            activation=None,
+            encoder_depth=5,
+            decoder_channels=decoder_channels,
+        )
+
+        assert num_decoder_blocks > 0, f"{num_decoder_blocks = }"
+        self.num_decoder_blocks = num_decoder_blocks
+
+        # self.channels = self.model.encoder.out_channels[-1]
+        self.channels = decoder_channels[self.num_decoder_blocks]
+        self.backbone = self.model.encoder
+        # TODO: determine the size of this decoder output
+        self.projector = nn.Sequential(
+            nn.Conv2d(self.channels, self.channels, 1),
+            nn.ReLU(),
+            nn.Conv2d(self.channels, projector_dim, 1),
+        )
+
+        self.model.decoder.blocks
+        import pdb; pdb.set_trace()
+        blocks = [self.model.decoder.blocks[i] for i in range(self.num_decoder_blocks)]
+        self.model.decoder.blocks = nn.ModuleList(blocks)
+
+    def forward(self, x):
+        features = self.backbone(x)
+        import pdb; pdb.set_trace()
+        features = self.model.decoder(*features)
+        projection = self.projector(features[-1])
+        return projection
+
+
 class UNET_ENCODER_ONLY(nn.Module):
     def __init__(self, projector_dim) -> None:
         super().__init__()
