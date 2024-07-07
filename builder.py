@@ -83,17 +83,11 @@ class UNET_TRUNCATED(nn.Module):
             nn.Conv2d(self.channels, projector_dim, 1),
         )
 
-        import pdb
-
-        pdb.set_trace()
         blocks = [self.model.decoder.blocks[i] for i in range(self.num_decoder_blocks)]
         self.model.decoder.blocks = nn.ModuleList(blocks)
 
     def forward(self, x):
         features = self.backbone(x)
-        import pdb
-
-        pdb.set_trace()
         features = self.model.decoder(*features)
         projection = self.projector(features[-1])
         return projection
