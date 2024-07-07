@@ -74,7 +74,7 @@ class UNET_TRUNCATED(nn.Module):
         self.num_decoder_blocks = num_decoder_blocks
 
         # self.channels = self.model.encoder.out_channels[-1]
-        self.channels = decoder_channels[self.num_decoder_blocks]
+        self.channels = decoder_channels[self.num_decoder_blocks-1]
         self.backbone = self.model.encoder
         # TODO: determine the size of this decoder output
         self.projector = nn.Sequential(
