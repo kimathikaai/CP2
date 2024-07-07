@@ -28,6 +28,7 @@ class BackboneType(Enum):
 
     DEEPLABV3 = 0
     UNET_ENCODER_ONLY = 1
+    UNET_TRUNCATED = 2
 
 
 class AverageMeter(object):
@@ -58,7 +59,7 @@ class AverageMeter(object):
 class UNET_TRUNCATED(nn.Module):
     def __init__(self, projector_dim, num_decoder_blocks=2) -> None:
         super().__init__()
-        decoder_channels=[256, 128, 64, 32, 16]
+        decoder_channels = [256, 128, 64, 32, 16]
         self.model = smp.Unet(
             "resnet50",
             encoder_weights="imagenet",
@@ -83,13 +84,17 @@ class UNET_TRUNCATED(nn.Module):
         )
 
         self.model.decoder.blocks
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         blocks = [self.model.decoder.blocks[i] for i in range(self.num_decoder_blocks)]
         self.model.decoder.blocks = nn.ModuleList(blocks)
 
     def forward(self, x):
         features = self.backbone(x)
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         features = self.model.decoder(*features)
         projection = self.projector(features[-1])
         return projection
@@ -135,6 +140,7 @@ class CP2_MOCO(nn.Module):
         lmbd_cp2_dense_loss=0.2,
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
+        unet_truncated_dec_blocks=2,
         device=None,
     ):
         super(CP2_MOCO, self).__init__()
@@ -173,6 +179,13 @@ class CP2_MOCO(nn.Module):
         elif backbone_type == BackboneType.UNET_ENCODER_ONLY:
             self.encoder_q = UNET_ENCODER_ONLY(projector_dim=dim)
             self.encoder_k = UNET_ENCODER_ONLY(projector_dim=dim)
+        elif backbone_type == BackboneType.UNET_TRUNCATED:
+            self.encoder_q = UNET_TRUNCATED(
+                projector_dim=dim, num_decoder_blocks=unet_truncated_dec_blocks
+            )
+            self.encoder_k = UNET_TRUNCATED(
+                projector_dim=dim, num_decoder_blocks=unet_truncated_dec_blocks
+            )
         else:
             raise NotImplementedError(f"{backbone_type = }")
 
