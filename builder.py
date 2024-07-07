@@ -89,7 +89,7 @@ class UNET_TRUNCATED(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         features = self.model.decoder(*features)
-        projection = self.projector(features[-1])
+        projection = self.projector(features)
         return projection
 
 
