@@ -38,7 +38,7 @@ do
         --foreground_max 0.8 \
         --backbone_type 'DEEPLABV3' \
         --mapping_type 'CP2' \
-        --lmbd_corr_weight 10 \
+        --lmbd_corr_weight 1 \
         --cap_queue
 
 	# Get the correct config file
