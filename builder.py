@@ -31,6 +31,15 @@ class BackboneType(Enum):
     UNET_TRUNCATED = 2
 
 
+class MappingType(Enum):
+    """
+    Used to determine how pixel level comparisons are made
+    """
+
+    CP2 = 0
+    PIXEL_PIXEL_REGION = 1
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
@@ -74,7 +83,7 @@ class UNET_TRUNCATED(nn.Module):
         self.num_decoder_blocks = num_decoder_blocks
 
         # self.channels = self.model.encoder.out_channels[-1]
-        self.channels = decoder_channels[self.num_decoder_blocks-1]
+        self.channels = decoder_channels[self.num_decoder_blocks - 1]
         self.backbone = self.model.encoder
         # TODO: determine the size of this decoder output
         self.projector = nn.Sequential(
@@ -131,8 +140,10 @@ class CP2_MOCO(nn.Module):
         T=0.2,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
+        lmbd_corr_weight=1,
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
+        mapping_type=MappingType.CP2,
         unet_truncated_dec_blocks=2,
         device=None,
     ):
@@ -146,6 +157,18 @@ class CP2_MOCO(nn.Module):
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
         self.rank = rank
+
+        assert mapping_type in MappingType
+        self.mapping_type = mapping_type
+
+        # Validate the correlation map weight
+        if mapping_type == MappingType.CP2:
+            assert lmbd_corr_weight == 1
+        elif mapping_type == MappingType.PIXEL_PIXEL_REGION:
+            assert lmbd_corr_weight > 1
+        else:
+            raise NotImplementedError(f"{mapping_type = }")
+        self.lmbd_corr_weight = lmbd_corr_weight
 
         assert pretrain_type in PretrainType
         self.pretrain_type = pretrain_type
@@ -323,7 +346,9 @@ class CP2_MOCO(nn.Module):
         elif self.pretrain_type == PretrainType.MOCO:
             return self.forward_moco(**kwargs)
 
-    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_moco(
+        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+    ):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
@@ -379,7 +404,9 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_byol(
+        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+    ):
         def loss_byol(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -424,7 +451,9 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_cp2(
+        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+    ):
         """
         Input:
             im_q: a batch of query images
@@ -433,6 +462,8 @@ class CP2_MOCO(nn.Module):
             logits, targets
         """
         mask_a, mask_b = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
+        _img_a = img_a.clone()
+        _img_b = img_b.clone()
         img_a = img_a * mask_a.unsqueeze(1) + bg0
         img_b = img_b * mask_b.unsqueeze(1) + bg1
 
@@ -442,15 +473,27 @@ class CP2_MOCO(nn.Module):
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
+        ids_a = ids_a[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
         mask_b = mask_b[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
+        ids_b = ids_b[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
 
         if visualize and self.rank == 0:
-            log_imgs = torch.stack([bg0, bg1, img_a, img_b], dim=1).flatten(0, 1)
-            log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
+            log_imgs = torch.stack(
+                [_img_a, _img_b, bg0, bg1, img_a, img_b], dim=1
+            ).flatten(0, 1)
+            log_grid = torchvision.utils.make_grid(log_imgs, nrow=6)
             wandb.log(
                 {
                     "train-examples": wandb.Image(
@@ -462,8 +505,20 @@ class CP2_MOCO(nn.Module):
         current_bs = img_a.size(0)
         hidden_image_size = mask_a.shape[1:]
 
+        # Flatten the masks
         mask_a = mask_a.reshape(current_bs, -1)
         mask_b = mask_b.reshape(current_bs, -1)
+        # Flatten the ids
+        ids_a = ids_a.reshape(current_bs, -1)
+        ids_b = ids_b.reshape(current_bs, -1)
+
+        #
+        # Generate the pixel correspondence map
+        #
+        corr_map = ~(ids_a[:, :, None] - ids_b[:, None, :].to(torch.bool))
+        corr_map_a = corr_map.sum(2)
+        corr_map_b = corr_map.sum(1)
+        corr_weights = (self.lmbd_corr_weight * corr_map + ~corr_map).detach()
 
         # compute query features
         q = self.encoder_q(img_a)  # queries: NxCx14x14
@@ -502,6 +557,12 @@ class CP2_MOCO(nn.Module):
         # all the pixels in k versus all the pixels in q
         # mask_dense = torch.einsum("x,ny->nxy", [torch.ones().cuda(), mask_b])
         # mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
+
+        # Apply the weight mask
+        assert (
+            corr_weights.shape == logits_dense.shape
+        ), f"{corr_weights.shape = }, {logits_dense = }"
+        logits_dense *= corr_weights
 
         # moco logits
         l_pos = torch.einsum("nc,nc->n", [q_pos, k_pos]).unsqueeze(-1)
