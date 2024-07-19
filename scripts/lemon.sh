@@ -22,7 +22,7 @@ do
 	pretrain_run_id=$(date +"%y%m%d%H%M%S")-pretrain-$pretrain_type
 	echo "Started pre-training for ${pretrain_run_id}"
 	# Start pre-training
-	CUDA_VISIBLE_DEVICES=0,1 python main.py \
+	CUDA_VISIBLE_DEVICES=1,2 python main.py \
 	    --seed 0 \
 	    --run_id $pretrain_run_id \
 	    --log_dir $log_dir \
@@ -37,6 +37,8 @@ do
 	    --foreground_min 0.25 \
 	    --foreground_max 0.5 \
         --backbone_type 'UNET_ENCODER_ONLY' \
+        --mapping_type 'PIXEL_PIXEL_REGION' \
+        --lmbd_corr_weight 10 \
 	    --cap_queue \
         --lemon_data
 
