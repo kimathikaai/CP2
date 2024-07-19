@@ -7,6 +7,7 @@ from enum import Enum
 import cv2
 import matplotlib
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
@@ -19,6 +20,8 @@ from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
 
 from networks.segment_network import PretrainType
+from tools.correlation_mapping import (get_correlation_map,
+                                       get_masked_correlation_map)
 
 
 class BackboneType(Enum):
@@ -206,7 +209,7 @@ class CP2_MOCO(nn.Module):
             raise NotImplementedError(f"{backbone_type = }")
 
         # Get the output stride
-        test_sample = torch.rand(1, 3, 224, 224)
+        test_sample = torch.rand(2, 3, 224, 224)
         output_shape = self.encoder_q(test_sample).shape
         self.output_stride = int(test_sample.shape[2] / output_shape[2])
         print(f"{self.output_stride = }")
@@ -265,6 +268,8 @@ class CP2_MOCO(nn.Module):
         self.cross_image_variance_target = AverageMeter(
             "Cross_Image_Variance_Target", ":6.2f"
         )
+        self.correlation_ious = []
+        self.masked_correlation_ious = []
 
     @torch.no_grad()
     def _momentum_update_key_encoder(self):
@@ -502,23 +507,36 @@ class CP2_MOCO(nn.Module):
                 }
             )
 
-        current_bs = img_a.size(0)
-        hidden_image_size = mask_a.shape[1:]
-
-        # Flatten the masks
-        mask_a = mask_a.reshape(current_bs, -1)
-        mask_b = mask_b.reshape(current_bs, -1)
-        # Flatten the ids
-        ids_a = ids_a.reshape(current_bs, -1)
-        ids_b = ids_b.reshape(current_bs, -1)
-
         #
         # Generate the pixel correspondence map
         #
-        corr_map = ~(ids_a[:, :, None] - ids_b[:, None, :].to(torch.bool))
-        corr_map_a = corr_map.sum(2)
-        corr_map_b = corr_map.sum(1)
+        results = get_masked_correlation_map(
+            map_a=ids_a,
+            map_b=ids_b,
+            mask_a=mask_a,
+            mask_b=mask_b,
+        )
+        corr_map = results["corr_map"]
         corr_weights = (self.lmbd_corr_weight * corr_map + ~corr_map).detach()
+
+        corr_map_a = results["corr_map_a"]
+        corr_map_b = results["corr_map_b"]
+        corr_map_a_masked = results["corr_map_a_masked"]
+        corr_map_b_masked = results["corr_map_b_masked"]
+
+        # Flatten the masks
+        current_bs = img_a.size(0)
+        hidden_image_size = mask_a.shape[1:]
+        mask_a = mask_a.reshape(current_bs, -1)
+        mask_b = mask_b.reshape(current_bs, -1)
+
+        # Calculate the masked correlation ious
+
+        # Update correlation_ious
+        ious = list(results["iou"].detach().cpu().numpy())
+        ious_masked = list(results["iou_masked"].detach().cpu().numpy())
+        self.correlation_ious.extend(ious)
+        self.masked_correlation_ious.extend(ious_masked)
 
         # compute query features
         q = self.encoder_q(img_a)  # queries: NxCx14x14
@@ -604,10 +622,42 @@ class CP2_MOCO(nn.Module):
             * 100.0
         )
 
-        #
-        # Create the foreground similarity score heatmap
-        #
         if new_epoch and self.rank == 0:
+            #
+            # Create the correlation map iou histogram
+            #
+            data = [[s] for s in self.correlation_ious]
+            table = wandb.Table(data=data, columns=["iou"])
+            wandb.log(
+                {
+                    "feature_space_histogram": wandb.plot.histogram(
+                        table,
+                        "iou",
+                        title="Correlation IoU Histogram (Feature-Space)",
+                    )
+                }
+            )
+            self.correlation_ious = []
+
+            #
+            # Create the masked correlation map iou histogram
+            #
+            data = [[s] for s in self.masked_correlation_ious]
+            table = wandb.Table(data=data, columns=["iou"])
+            wandb.log(
+                {
+                    "feature_space_masked_histogram": wandb.plot.histogram(
+                        table,
+                        "iou",
+                        title="Masked Correlation IoU Histogram (Feature-Space)",
+                    )
+                }
+            )
+            self.masked_correlation_ious = []
+
+            #
+            # Create the foreground similarity score heatmap
+            #
             heatmaps_a = []
             heatmaps_b = []
             for i in range(len(logits_dense)):

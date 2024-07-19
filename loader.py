@@ -1,14 +1,14 @@
 # tool functions from moco v2 code base:
 # https://github.com/facebookresearch/moco
 # Copyright (c) Facebook, Inc. and its affilates. All Rights Reserved
-import torch
 import random
 
 import albumentations as A
 import numpy as np
-from PIL import ImageFilter
-from torchvision.transforms import functional as F
+import torch
+from PIL import Image, ImageFilter
 from torchvision import transforms as T
+from torchvision.transforms import functional as F
 
 
 class TwoCropsTransform:
@@ -21,6 +21,7 @@ class TwoCropsTransform:
         q = self.base_transform(x)
         k = self.base_transform(x)
         return [q, k]
+
 
 class A_TwoCropsTransform:
     """
@@ -39,22 +40,21 @@ class A_TwoCropsTransform:
         sample = np.asarray(x)
         # Get the image sizes
         print(f"{sample.shape = }")
-        import pdb; pdb.set_trace()
-        c, h, w = sample.shape
+        h, w, c = sample.shape
         # Get an array of ids
-        pixel_ids = np.arange(start=0, stop=h * w).reshape((h, w))
+        pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
         print(f"{pixel_ids.shape = }")
 
         #
         # Get the query and key images
         #
         aug_q = self.base_transform(image=sample, mask=pixel_ids)
-        q = self.to_tensor(aug_q['image'])
-        q_ids = torch.from_numpy(aug_q['mask'])
+        q = self.to_tensor(aug_q["image"])
+        q_ids = torch.from_numpy(aug_q["mask"])
 
         aug_k = self.base_transform(image=sample, mask=pixel_ids)
-        k = self.to_tensor(aug_k['image'])
-        k_ids = torch.from_numpy(aug_k['mask'])
+        k = self.to_tensor(aug_k["image"])
+        k_ids = torch.from_numpy(aug_k["mask"])
 
         return (q, q_ids), (k, k_ids)
 
@@ -80,12 +80,14 @@ class AGaussianBlur(A.ImageOnlyTransform):
         super().__init__(always_apply, p)
         self._sigma = sigma
 
-    def apply(self, x, copy=True):
+    def apply(self, x, copy=True, **params):
         if np.random.uniform(0, 1) > self.p:
             return x
         if copy:
             x = x.copy()
 
+        # convert to PIL image
+        x = Image.fromarray(x)
         sigma = random.uniform(self._sigma[0], self._sigma[1])
         x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
-        return x
+        return np.asarray(x)
