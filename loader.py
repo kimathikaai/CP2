@@ -39,11 +39,11 @@ class A_TwoCropsTransform:
         #
         sample = np.asarray(x)
         # Get the image sizes
-        print(f"{sample.shape = }")
+        # print(f"{sample.shape = }")
         h, w, c = sample.shape
         # Get an array of ids
         pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
-        print(f"{pixel_ids.shape = }")
+        # print(f"{pixel_ids.shape = }")
 
         #
         # Get the query and key images
