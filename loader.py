@@ -49,11 +49,13 @@ class A_TwoCropsTransform:
         # Get the query and key images
         #
         aug_q = self.base_transform(image=sample, mask=pixel_ids)
-        q = self.to_tensor(aug_q["image"])
+        q = aug_q['image']
+        q = self.to_tensor(q)
         q_ids = torch.from_numpy(aug_q["mask"])
 
         aug_k = self.base_transform(image=sample, mask=pixel_ids)
-        k = self.to_tensor(aug_k["image"])
+        k = aug_k['image']
+        k = self.to_tensor(k)
         k_ids = torch.from_numpy(aug_k["mask"])
 
         return (q, q_ids), (k, k_ids)
