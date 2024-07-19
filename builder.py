@@ -652,13 +652,7 @@ class CP2_MOCO(nn.Module):
             # Number of non zero ious
             non_zero_masked_iou_count = np.count_nonzero(self.masked_correlation_ious)
             size = len(self.masked_correlation_ious)
-            wandb.log(
-                {
-                    "feature_space_non_zero_masked_iou": np.count_nonzero(
-                        non_zero_masked_iou_count
-                    )
-                }
-            )
+            wandb.log({"feature_space_non_zero_masked_iou": non_zero_masked_iou_count})
             wandb.log(
                 {
                     "feature_space_non_zero_masked_iou_ratio": non_zero_masked_iou_count
