@@ -634,9 +634,10 @@ class CP2_MOCO(nn.Module):
             plt.ylabel("Frequency")
             wandb.log({"feature_space_iou": wandb.Image(plt)})
             # Number of non zero ious
-            wandb.log(
-                {"feature_space_non_zero_iou": np.count_nonzero(self.correlation_ious)}
-            )
+            non_zero_iou_count = np.count_nonzero(self.correlation_ious)
+            size = len(self.correlation_ious)
+            wandb.log({"feature_space_non_zero_iou": non_zero_iou_count})
+            wandb.log({"feature_space_non_zero_iou_ratio": non_zero_iou_count / size})
             self.correlation_ious = []
 
             #
@@ -649,11 +650,19 @@ class CP2_MOCO(nn.Module):
             plt.ylabel("Frequency")
             wandb.log({"feature_space_masked_iou": wandb.Image(plt)})
             # Number of non zero ious
+            non_zero_masked_iou_count = np.count_nonzero(self.masked_correlation_ious)
+            size = len(self.masked_correlation_ious)
             wandb.log(
                 {
                     "feature_space_non_zero_masked_iou": np.count_nonzero(
-                        self.masked_correlation_ious
+                        non_zero_masked_iou_count
                     )
+                }
+            )
+            wandb.log(
+                {
+                    "feature_space_non_zero_masked_iou_ratio": non_zero_masked_iou_count
+                    / size
                 }
             )
             self.masked_correlation_ious = []
