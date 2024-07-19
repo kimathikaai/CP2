@@ -478,9 +478,6 @@ def train(
         img_b, ids_b = images[idx_b]
         img_b, ids_b = img_b.to(model.device), ids_b.to(model.device)
 
-        import pdb
-
-        pdb.set_trace()
         # validate ids and images
         bg0 = bg0.to(model.device)
         bg1 = bg1.to(model.device)
