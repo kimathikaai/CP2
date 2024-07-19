@@ -169,7 +169,7 @@ class CP2_MOCO(nn.Module):
         if mapping_type == MappingType.CP2:
             assert lmbd_corr_weight == 1
         elif mapping_type == MappingType.PIXEL_PIXEL_REGION:
-            assert lmbd_corr_weight > 1
+            assert lmbd_corr_weight >= 1
         else:
             raise NotImplementedError(f"{mapping_type = }")
         self.lmbd_corr_weight = lmbd_corr_weight
