@@ -632,12 +632,30 @@ class CP2_MOCO(nn.Module):
             plt.title("Histogram of IoU values")
             plt.xlabel("IoU")
             plt.ylabel("Frequency")
-            wandb.log({"feature_space_iou": plt})
+            wandb.log({"feature_space_iou": wandb.Image(plt)})
+            # Number of non zero ious
+            wandb.log(
+                {"feature_space_non_zero_iou": np.count_nonzero(self.correlation_ious)}
+            )
             self.correlation_ious = []
 
             #
             # Create the masked correlation map iou histogram
             #
+            plt.figure(figsize=(10, 4))
+            plt.hist(self.masked_correlation_ious, bins="auto")
+            plt.title("Histogram of Masked IoU values")
+            plt.xlabel("IoU")
+            plt.ylabel("Frequency")
+            wandb.log({"feature_space_masked_iou": wandb.Image(plt)})
+            # Number of non zero ious
+            wandb.log(
+                {
+                    "feature_space_non_zero_masked_iou": np.count_nonzero(
+                        self.masked_correlation_ious
+                    )
+                }
+            )
             self.masked_correlation_ious = []
 
             #
