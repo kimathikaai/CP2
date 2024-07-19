@@ -160,6 +160,7 @@ class CP2_MOCO(nn.Module):
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
         self.rank = rank
+        self.epoch = 0
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -626,33 +627,17 @@ class CP2_MOCO(nn.Module):
             #
             # Create the correlation map iou histogram
             #
-            data = [[s] for s in self.correlation_ious]
-            table = wandb.Table(data=data, columns=["iou"])
-            wandb.log(
-                {
-                    "feature_space_histogram": wandb.plot.histogram(
-                        table,
-                        "iou",
-                        title="Correlation IoU Histogram (Feature-Space)",
-                    )
-                }
-            )
+            plt.figure(figsize=(10, 4))
+            plt.hist(self.correlation_ious, bins="auto")
+            plt.title("Histogram of IoU values")
+            plt.xlabel("IoU")
+            plt.ylabel("Frequency")
+            wandb.log({"feature_space_iou": plt})
             self.correlation_ious = []
 
             #
             # Create the masked correlation map iou histogram
             #
-            data = [[s] for s in self.masked_correlation_ious]
-            table = wandb.Table(data=data, columns=["iou"])
-            wandb.log(
-                {
-                    "feature_space_masked_histogram": wandb.plot.histogram(
-                        table,
-                        "iou",
-                        title="Masked Correlation IoU Histogram (Feature-Space)",
-                    )
-                }
-            )
             self.masked_correlation_ious = []
 
             #
@@ -717,6 +702,7 @@ class CP2_MOCO(nn.Module):
             log_grid = log_grid[:, :, :3]
 
             wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
+            self.epoch += 1
 
         # Update logs
         self.loss_o.update(loss.item(), img_a.size(0))

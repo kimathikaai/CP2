@@ -50,12 +50,12 @@ class A_TwoCropsTransform:
         #
         aug_q = self.base_transform(image=sample, mask=pixel_ids)
         q = aug_q['image']
-        q = self.to_tensor(q)
+        q = self.to_tensor(np.array(q))
         q_ids = torch.from_numpy(aug_q["mask"])
 
         aug_k = self.base_transform(image=sample, mask=pixel_ids)
         k = aug_k['image']
-        k = self.to_tensor(k)
+        k = self.to_tensor(np.array(k))
         k_ids = torch.from_numpy(aug_k["mask"])
 
         return (q, q_ids), (k, k_ids)
