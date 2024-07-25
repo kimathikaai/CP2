@@ -9,6 +9,9 @@ from torch._dynamo.skipfiles import check
 from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
                           MetricCollection, Precision, Recall)
 
+from util.pos_embed import interpolate_pos_embed
+from timm.models.layers import trunc_normal_
+import models.vit as models
 BACKGROUND_CLASS = 0
 
 
@@ -23,6 +26,7 @@ class PretrainType(Enum):
     MIRROR = 3
     BYOL = 4
     MOCO = 5
+    CIM = 6
 
 
 class Stage(Enum):
@@ -41,9 +45,11 @@ class SegmentationModule(L.LightningModule):
         weight_decay,
         num_classes,
         image_shape,
+        model_name
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.model_name = model_name
 
         # Initialize the model
         self.model = build_segmentor(model_config.model)
@@ -53,20 +59,41 @@ class SegmentationModule(L.LightningModule):
             self.model.backbone.init_weights()
         elif pretrain_type == PretrainType.RANDOM:
             pass
-        elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL]:
+        elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL,PretrainType.CIM]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
-            assert (
-                checkpoint["pretrain_type"] == pretrain_type.name
-            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
-            state_dict = {
-                x.replace("module.encoder_k.", ""): y
-                for x, y in checkpoint["state_dict"].items()
-                if "encoder_k" in x
-            }
-            # Remove the conv_seg weights for now (mismatch in num_classes)
-            state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
-            print(self.model.load_state_dict(state_dict, strict=False))
+            if pretrain_type != PretrainType.CIM:
+                assert (
+                    checkpoint["pretrain_type"] == pretrain_type.name
+                ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+                state_dict = {
+                    x.replace("module.encoder_k.", ""): y
+                    for x, y in checkpoint["state_dict"].items()
+                    if "encoder_k" in x
+                }
+                # Remove the conv_seg weights for now (mismatch in num_classes)
+                state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
+                print(self.model.load_state_dict(state_dict, strict=False))
+            else:
+                checkpoint_model = checkpoint['model']
+                state_dict = self.model.state_dict()
+                model = models.__dict__[model_name](
+                    img_size=224, 
+                    num_classes=2, # Default 1000
+                    drop_path_rate=0.1,
+                    global_pool=True,
+                )
+                # state_dict = checkpoint["state_dict"]
+                for k in ['head.weight', 'head.bias']:
+                    if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+                        print(f"Removing key {k} from pretrained checkpoint")
+                        del checkpoint_model[k]
+                # Interpolate position embedding
+                interpolate_pos_embed(model, checkpoint_model)
+                msg = self.model.load_state_dict(state_dict, strict=False)
+                print(msg)
+                # trunc_normal_(self.model.head.weight, std=2e-5)
+
         elif pretrain_type == PretrainType.MIRROR:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
