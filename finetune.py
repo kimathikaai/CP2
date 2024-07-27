@@ -54,6 +54,8 @@ def get_args():
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
     parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
+    parser.add_argument('--model_name', default='vit_tiny_patch16', type=str, metavar='MODEL',
+                        help='Name of model to train')
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
 
     parser.add_argument("--linear_evaluation", action='store_true', help="Freeze the encoder")
@@ -199,6 +201,7 @@ def main(args):
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
+        model_name = args.model_name
     )
 
     # if linear evaluation freeze backbone
