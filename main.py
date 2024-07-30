@@ -51,11 +51,13 @@ def get_args():
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
     parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], default=DatasetType.FILENAME.name)
+    parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
     # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
+    parser.add_argument('--unet_truncated_dec_blocks', default=2, type=int)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
@@ -104,14 +106,13 @@ def get_args():
     parser.add_argument('--seed', default=0, type=int,
                         help='seed for initializing training. ')
 
-    parser.add_argument('--output-stride', default=16, type=int,
-                        help='output stride of encoder')
     # fmt: on
 
     args = parser.parse_args()
     # convert to enum
     args.directory_type = DatasetType[args.directory_type]
     args.pretrain_type = PretrainType[args.pretrain_type]
+    args.backbone_type = builder.BackboneType[args.backbone_type]
 
     # lemon data
     if args.lemon_data:
@@ -313,19 +314,20 @@ def main_worker(rank, args):
         m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
         K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
         dim=128 if args.pretrain_type == PretrainType.CP2 else 256,
-        output_stride=args.output_stride,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
+        backbone_type=args.backbone_type,
+        unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         device=device,
         rank=rank,
     )
     model.to(device)
     logger.info(model)
 
-    # Initialize the model pretrained ImageNet weights
-    model.encoder_q.backbone.init_weights()
-    model.encoder_k.backbone.init_weights()
+    if rank==0:
+        wandb.config.update({'output_stride': model.output_stride})
+
     # import copy
     # # Initialize the model pretrained ImageNet weights
     # weights_before_q = copy.deepcopy(model.encoder_q.backbone)
@@ -418,6 +420,7 @@ def main_worker(rank, args):
                         "state_dict": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "pretrain_type": args.pretrain_type.name,
+                        "backbone_type": args.backbone_type.name
                     },
                     is_best=False,
                     filename=os.path.join(

@@ -2,11 +2,13 @@
 # https://github.com/facebookresearch/moco
 # Copyright (c) Facebook, Inc. and its affilates. All Rights Reserved
 import copy
+from enum import Enum
 
 import cv2
 import matplotlib
 import matplotlib.cm as cm
 import numpy as np
+import segmentation_models_pytorch as smp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,7 +17,18 @@ import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
+
 from networks.segment_network import PretrainType
+
+
+class BackboneType(Enum):
+    """
+    Used to differentiate which backbone architecture is used
+    """
+
+    DEEPLABV3 = 0
+    UNET_ENCODER_ONLY = 1
+    UNET_TRUNCATED = 2
 
 
 class AverageMeter(object):
@@ -43,6 +56,70 @@ class AverageMeter(object):
         return fmtstr.format(**self.__dict__)
 
 
+class UNET_TRUNCATED(nn.Module):
+    def __init__(self, projector_dim, num_decoder_blocks=2) -> None:
+        super().__init__()
+        decoder_channels = [256, 128, 64, 32, 16]
+        self.model = smp.Unet(
+            "resnet50",
+            encoder_weights="imagenet",
+            classes=2,
+            in_channels=3,
+            activation=None,
+            encoder_depth=5,
+            decoder_channels=decoder_channels,
+        )
+
+        assert num_decoder_blocks > 0, f"{num_decoder_blocks = }"
+        self.num_decoder_blocks = num_decoder_blocks
+
+        # self.channels = self.model.encoder.out_channels[-1]
+        self.channels = decoder_channels[self.num_decoder_blocks-1]
+        self.backbone = self.model.encoder
+        # TODO: determine the size of this decoder output
+        self.projector = nn.Sequential(
+            nn.Conv2d(self.channels, self.channels, 1),
+            nn.ReLU(),
+            nn.Conv2d(self.channels, projector_dim, 1),
+        )
+
+        blocks = [self.model.decoder.blocks[i] for i in range(self.num_decoder_blocks)]
+        self.model.decoder.blocks = nn.ModuleList(blocks)
+
+    def forward(self, x):
+        features = self.backbone(x)
+        features = self.model.decoder(*features)
+        projection = self.projector(features)
+        return projection
+
+
+class UNET_ENCODER_ONLY(nn.Module):
+    def __init__(self, projector_dim) -> None:
+        super().__init__()
+        self.model = smp.Unet(
+            "resnet50",
+            encoder_weights="imagenet",
+            classes=2,
+            in_channels=3,
+            activation=None,
+            encoder_depth=5,
+            decoder_channels=[256, 128, 64, 32, 16],
+        )
+
+        self.channels = self.model.encoder.out_channels[-1]
+        self.backbone = self.model.encoder
+        self.projector = nn.Sequential(
+            nn.Conv2d(self.channels, self.channels, 1),
+            nn.ReLU(),
+            nn.Conv2d(self.channels, projector_dim, 1),
+        )
+
+    def forward(self, x):
+        features = self.backbone(x)
+        projection = self.projector(features[-1])
+        return projection
+
+
 class CP2_MOCO(nn.Module):
     def __init__(
         self,
@@ -52,10 +129,11 @@ class CP2_MOCO(nn.Module):
         K=65536,
         m=0.999,
         T=0.2,
-        output_stride=16,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
         pretrain_type=PretrainType.CP2,
+        backbone_type=BackboneType.DEEPLABV3,
+        unet_truncated_dec_blocks=2,
         device=None,
     ):
         super(CP2_MOCO, self).__init__()
@@ -64,7 +142,6 @@ class CP2_MOCO(nn.Module):
         self.m = m
         self.T = T
         self.dim = dim
-        self.output_stride = output_stride
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
@@ -73,36 +150,68 @@ class CP2_MOCO(nn.Module):
         assert pretrain_type in PretrainType
         self.pretrain_type = pretrain_type
 
-        self.encoder_q = build_segmentor(
-            cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
-        )
-        self.encoder_k = build_segmentor(
-            cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
-        )
+        assert backbone_type in BackboneType
+        self.backbone_type = backbone_type
 
-        # Projection/prediction networks
-        # backbone_features = 2048 * 7 * 7  # if imgs are 224x224
-        backbone_features = 2048 * 14 * 14  # if imgs are 224x224
-        hidden_features = 2048
-        batch_norm = (
-            nn.BatchNorm1d(hidden_features)
-            if pretrain_type == PretrainType.BYOL
-            else nn.Identity()
-        )
-        self.encoder_q.projector = nn.Sequential(
-            nn.Linear(in_features=backbone_features, out_features=hidden_features),
-            batch_norm,
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_features, out_features=self.dim),
-        )
-        self.encoder_k.projector = copy.deepcopy(self.encoder_q.projector)
+        # No current handling for both
+        if backbone_type != BackboneType.DEEPLABV3:
+            assert (
+                pretrain_type == PretrainType.CP2
+            ), f"{backbone_type = }, {pretrain_type = }"
 
-        self.predictor = nn.Sequential(
-            nn.Linear(in_features=self.dim, out_features=hidden_features),
-            batch_norm,
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=hidden_features, out_features=self.dim),
-        )
+        if backbone_type == BackboneType.DEEPLABV3:
+            self.encoder_q = build_segmentor(
+                cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
+            )
+            self.encoder_k = build_segmentor(
+                cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
+            )
+            # Initialize the model pretrained ImageNet weights
+            self.encoder_q.backbone.init_weights()
+            self.encoder_k.backbone.init_weights()
+        elif backbone_type == BackboneType.UNET_ENCODER_ONLY:
+            self.encoder_q = UNET_ENCODER_ONLY(projector_dim=dim)
+            self.encoder_k = UNET_ENCODER_ONLY(projector_dim=dim)
+        elif backbone_type == BackboneType.UNET_TRUNCATED:
+            self.encoder_q = UNET_TRUNCATED(
+                projector_dim=dim, num_decoder_blocks=unet_truncated_dec_blocks
+            )
+            self.encoder_k = UNET_TRUNCATED(
+                projector_dim=dim, num_decoder_blocks=unet_truncated_dec_blocks
+            )
+        else:
+            raise NotImplementedError(f"{backbone_type = }")
+
+        # Get the output stride
+        test_sample = torch.rand(1, 3, 224, 224)
+        output_shape = self.encoder_q(test_sample).shape
+        self.output_stride = int(test_sample.shape[2] / output_shape[2])
+        print(f"{self.output_stride = }")
+
+        if pretrain_type in [PretrainType.BYOL, PretrainType.MOCO]:
+            # Projection/prediction networks
+            # backbone_features = 2048 * 7 * 7  # if imgs are 224x224
+            backbone_features = 2048 * 14 * 14  # if imgs are 224x224
+            hidden_features = 2048
+            batch_norm = (
+                nn.BatchNorm1d(hidden_features)
+                if pretrain_type == PretrainType.BYOL
+                else nn.Identity()
+            )
+            self.encoder_q.projector = nn.Sequential(
+                nn.Linear(in_features=backbone_features, out_features=hidden_features),
+                batch_norm,
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_features, out_features=self.dim),
+            )
+            self.encoder_k.projector = copy.deepcopy(self.encoder_q.projector)
+
+            self.predictor = nn.Sequential(
+                nn.Linear(in_features=self.dim, out_features=hidden_features),
+                batch_norm,
+                nn.ReLU(inplace=True),
+                nn.Linear(in_features=hidden_features, out_features=self.dim),
+            )
 
         # Exact copy parameters
         for param_q, param_k in zip(
