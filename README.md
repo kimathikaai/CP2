@@ -25,7 +25,7 @@ mim install 'mmcv<2.2.0'
 cd ~/CP2
 rm -r mmsegmentation/
 git clone https://github.com/kimathikaai/mmsegmentation.git
-cd ~/CP2/mmsegmentation
+cd mmsegmentation/
 git checkout develop # Switch to develop branch
 pip install -v -e .
 # '-v' means verbose, or more output
