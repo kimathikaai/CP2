@@ -22,6 +22,7 @@ pip install -U openmim
 mim install mmengine
 mim install 'mmcv<2.2.0'
 # Install mmsegmentation from the source -> clone the mmsegmentation repo
+cd ~/CP2
 rm -r mmsegmentation/
 git clone https://github.com/kimathikaai/mmsegmentation.git
 cd ~/CP2/mmsegmentation
