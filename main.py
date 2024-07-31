@@ -53,6 +53,7 @@ def get_args():
     # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
     parser.add_argument('--lmbd_corr_weight', default=1, type=float)
+    parser.add_argument('--pixel_ids_stride', default=1, type=int)
     parser.add_argument('--unet_truncated_dec_blocks', default=2, type=int)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
@@ -187,7 +188,8 @@ def prepare_data(rank, num_workers, args):
                 loader.AGaussianBlur(p=0.5),
                 A.HorizontalFlip(),
             ]
-        )
+        ),
+        pixel_ids_stride=args.pixel_ids_stride,
     )
 
     train_dataset = get_pretrain_dataset(
