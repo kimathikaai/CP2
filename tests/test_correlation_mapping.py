@@ -1,10 +1,12 @@
 import unittest
 from typing import List, Tuple
 
+import cv2
 import numpy as np
 import torch
 from parameterized import parameterized
 
+from loader import rescale_ids
 from tools.correlation_mapping import visualize_correlation_map
 
 OUTPUT_DIR = "./artifacts"
@@ -181,6 +183,24 @@ class TestCorrelationMapping(unittest.TestCase):
         # idxs_a = np.where(corr_map_a.reshape(b, h, w))
         # idxs_b = np.where(corr_map_b.reshape(b, h, w))
         # assert torch.all(map_a[idxs_a] == map_b[idxs_b])
+
+
+class TestIDMapResize(unittest.TestCase):
+    def test_pixel_ids_resize(self):
+        stride = 2
+        h, w = 10, 10
+        pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
+        print(f"{pixel_ids = }")
+        reshaped_pixel_ids = rescale_ids(pixel_ids, stride)
+        print(f"{reshaped_pixel_ids = }")
+        self.assertEqual(reshaped_pixel_ids.shape[0] * stride, pixel_ids.shape[0])
+
+        # resize pixel ids
+        upsampled_pixel_ids = cv2.resize(
+            reshaped_pixel_ids, dsize=(h, w), interpolation=cv2.INTER_NEAREST_EXACT
+        )
+        print(f"{upsampled_pixel_ids = }")
+        self.assertEqual(upsampled_pixel_ids.shape, pixel_ids.shape)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 import random
 
 import albumentations as A
+import cv2
 import numpy as np
 import torch
 from PIL import Image, ImageFilter
@@ -23,15 +24,24 @@ class TwoCropsTransform:
         return [q, k]
 
 
+def rescale_ids(pixel_ids, stride):
+    return pixel_ids[
+        stride // 2 :: stride,
+        stride // 2 :: stride,
+    ]
+
+
 class A_TwoCropsTransform:
     """
     Albumentations style implemenation
     Take two random crops of one image as the query and key.
     """
 
-    def __init__(self, base_transform):
+    def __init__(self, base_transform, pixel_ids_stride: int = 1):
         self.base_transform = base_transform
         self.to_tensor = T.ToTensor()
+        assert pixel_ids_stride > 0
+        self.pixel_ids_stride = pixel_ids_stride
 
     def __call__(self, x):
         #
@@ -44,17 +54,23 @@ class A_TwoCropsTransform:
         # Get an array of ids
         pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
         # print(f"{pixel_ids.shape = }")
+        pixel_ids = rescale_ids(pixel_ids, self.pixel_ids_stride)
+
+        # resize pixel ids
+        pixel_ids = cv2.resize(
+            pixel_ids, dsize=(h, w), interpolation=cv2.INTER_NEAREST_EXACT
+        )
 
         #
         # Get the query and key images
         #
         aug_q = self.base_transform(image=sample, mask=pixel_ids)
-        q = aug_q['image']
+        q = aug_q["image"]
         q = self.to_tensor(np.array(q))
         q_ids = torch.from_numpy(aug_q["mask"])
 
         aug_k = self.base_transform(image=sample, mask=pixel_ids)
-        k = aug_k['image']
+        k = aug_k["image"]
         k = self.to_tensor(np.array(k))
         k_ids = torch.from_numpy(aug_k["mask"])
 
