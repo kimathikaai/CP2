@@ -152,6 +152,7 @@ def visualize_correlation_map(
     mask_a: torch.Tensor,
     mask_b: torch.Tensor,
     save_dir: str,
+    name: str = '',
 ):
     # Get correlation maps
     results = get_masked_correlation_map(
@@ -188,7 +189,7 @@ def visualize_correlation_map(
     plt.xlabel("IoU")
     plt.ylabel("Frequency")
     print("Saving the iou histogram")
-    plt.savefig(os.path.join(save_dir, "iou_histogram.png"))
+    plt.savefig(os.path.join(save_dir, f"{name}_iou_histogram.png"))
     # Plot histogram of masked IoU values
     plt.figure(figsize=(10, 4))
     plt.hist(iou_masked, bins="auto")
@@ -196,13 +197,13 @@ def visualize_correlation_map(
     plt.xlabel("IoU")
     plt.ylabel("Frequency")
     print("Saving the masked iou histogram")
-    plt.savefig(os.path.join(save_dir, "masked_iou_histogram.png"))
+    plt.savefig(os.path.join(save_dir, f"{name}_masked_iou_histogram.png"))
 
     # Plot original maps and correlation maps
     print("Plotting the correlation maps")
     batch_size = map_a.shape[0]
     height, width = map_a.shape[1], map_a.shape[2]
-    fig, axes = plt.subplots(batch_size, 10, figsize=(20, 20))
+    fig, axes = plt.subplots(batch_size+1, 10, figsize=(20, 20))
     for i in range(batch_size):
         print(f"{iou[i] = }")
         print(f"{iou_masked[i] = }")
@@ -232,7 +233,7 @@ def visualize_correlation_map(
         axes[i, 9].set_title(f"corr_map_b_masked[{i}]")
 
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, "maps_visualization.png"))
+    plt.savefig(os.path.join(save_dir, f"{name}_maps_visualization.png"))
 
     return results
 
