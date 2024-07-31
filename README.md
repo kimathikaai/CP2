@@ -46,6 +46,12 @@ Pre-training and fine-tuning is done on multiple GPUs. Before running a script m
 ./scripts/polyp.sh
 ```
 
+6. Running tests
+```bash
+python -m unittest discover -s tests
+
+```
+
 # Citation
 ```
 @article{wang2022cp2,
