@@ -8,6 +8,39 @@ import numpy as np
 import torch
 
 
+def get_masked_iou(
+    map_a: torch.Tensor,
+    map_b: torch.Tensor,
+    mask_a: torch.Tensor,
+    mask_b: torch.Tensor,
+):
+    batch_size = map_a.shape[0]
+
+    # Assumes maps and masks are 1D tensors
+    assert len(map_a.shape) == 2, f"{map_a.shape = }"
+    assert len(mask_a.shape) == 2, f"{mask_a.shape = }"
+
+    # The zero index is ignored, therefore increment all
+    # ids by one then zero out the masked ones
+    zeros = torch.zeros(batch_size, 1)
+    ids = torch.cat([zeros, map_a + 1, map_b + 1], dim=1)
+    masks = torch.cat([zeros, mask_a, mask_b], dim=1)
+    assert batch_size == ids.shape[0], f"{ids.shape = }"
+
+    # Calculate the ious
+    ious = torch.zeros(batch_size)
+    for i in range(ids.shape[0]):
+        u, c = torch.unique(ids[i] * masks[i], return_counts=True, sorted=True)
+        # The union is the number of unique ids
+        union = len(u) - 1  # minus the zero (ignored) ids
+        # The intersection is the number of shared ids
+        c = c[1:]  # ignore the zero id
+        intersection = len(c[c > 1])
+        ious[i] = intersection / union
+
+    return ious
+
+
 def get_correlation_map(map_a: torch.Tensor, map_b: torch.Tensor):
     """
     Get the correlation map between two ID maps.
@@ -33,13 +66,19 @@ def get_correlation_map(map_a: torch.Tensor, map_b: torch.Tensor):
     corr_map_a = corr_map.sum(2)
     corr_map_b = corr_map.sum(1)
     # Get the iou (B,)
-    intersection = corr_map_a.sum(1)
-    union = (
-        intersection
-        + (corr_map_b.shape[1] - intersection)
-        + (corr_map_a.shape[1] - intersection)
+    # intersection = corr_map_a.sum(1)
+    # union = (
+    #     intersection
+    #     + (corr_map_b.shape[1] - intersection)
+    #     + (corr_map_a.shape[1] - intersection)
+    # )
+    # iou = intersection / union
+    iou = get_masked_iou(
+        map_a=map_a.reshape(batch_size, -1),
+        map_b=map_b.reshape(batch_size, -1),
+        mask_a=torch.ones(batch_size, map_a.shape[1] * map_a.shape[2]),
+        mask_b=torch.ones(batch_size, map_b.shape[1] * map_b.shape[2]),
     )
-    iou = intersection / union
 
     return {
         "corr_map": corr_map,
@@ -79,15 +118,21 @@ def get_masked_correlation_map(
     # (B, HW)
     corr_map_a_masked = corr_mask.sum(2)
     corr_map_b_masked = corr_mask.sum(1)
-    # Get the iou (B,)
-    intersection = corr_map_a_masked.sum(1)
-    # union = corr_map_a_masked.shape[1] + corr_map_b_masked.shape[1]
-    union = (
-        intersection
-        + (mask_a.sum((1, 2)) - intersection)
-        + (mask_b.sum((1, 2)) - intersection)
+    # # Get the iou (B,)
+    # intersection = corr_map_a_masked.sum(1)
+    # # union = corr_map_a_masked.shape[1] + corr_map_b_masked.shape[1]
+    # union = (
+    #     intersection
+    #     + (mask_a.sum((1, 2)) - intersection)
+    #     + (mask_b.sum((1, 2)) - intersection)
+    # )
+    # iou_masked = intersection / union
+    iou_masked = get_masked_iou(
+        map_a=map_a.reshape(batch_size, -1),
+        map_b=map_b.reshape(batch_size, -1),
+        mask_a=mask_a.reshape(batch_size, -1),
+        mask_b=mask_b.reshape(batch_size, -1),
     )
-    iou_masked = intersection / union
 
     return {
         "corr_map": corr_map,
@@ -233,5 +278,5 @@ if __name__ == "__main__":
         map_b=map_b,
         mask_a=mask_a,
         mask_b=mask_b,
-        save_dir='./artifacts'
+        save_dir="./artifacts",
     )
