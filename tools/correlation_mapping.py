@@ -81,8 +81,12 @@ def get_correlation_map(map_a: torch.Tensor, map_b: torch.Tensor):
     iou = get_masked_iou(
         map_a=map_a.reshape(batch_size, -1),
         map_b=map_b.reshape(batch_size, -1),
-        mask_a=torch.ones(batch_size, map_a.shape[1] * map_a.shape[2]),
-        mask_b=torch.ones(batch_size, map_b.shape[1] * map_b.shape[2]),
+        mask_a=torch.ones(
+            batch_size, map_a.shape[1] * map_a.shape[2], device=map_a.device
+        ),
+        mask_b=torch.ones(
+            batch_size, map_b.shape[1] * map_b.shape[2], device=map_b.device
+        ),
     )
 
     return {
@@ -157,7 +161,7 @@ def visualize_correlation_map(
     mask_a: torch.Tensor,
     mask_b: torch.Tensor,
     save_dir: str,
-    name: str = '',
+    name: str = "",
 ):
     # Get correlation maps
     results = get_masked_correlation_map(
@@ -208,7 +212,7 @@ def visualize_correlation_map(
     print("Plotting the correlation maps")
     batch_size = map_a.shape[0]
     height, width = map_a.shape[1], map_a.shape[2]
-    fig, axes = plt.subplots(batch_size+1, 10, figsize=(20, 20))
+    fig, axes = plt.subplots(batch_size + 1, 10, figsize=(20, 20))
     for i in range(batch_size):
         print(f"{iou[i] = }")
         print(f"{iou_masked[i] = }")
