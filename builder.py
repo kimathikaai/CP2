@@ -468,6 +468,8 @@ class CP2_MOCO(nn.Module):
             logits, targets
         """
         mask_a, mask_b = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
+        mask_a.to(bg0.device)
+        mask_b.to(bg1.device)
         _img_a = img_a.clone()
         _img_b = img_b.clone()
         img_a = img_a * mask_a.unsqueeze(1) + bg0
