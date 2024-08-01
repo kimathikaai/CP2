@@ -186,8 +186,8 @@ class TestCorrelationMapping(unittest.TestCase):
 
 
 class TestIDMapResize(unittest.TestCase):
-    def test_pixel_ids_resize(self):
-        stride = 2
+    @parameterized.expand([('stride1', 1), ('stride2', 2)])
+    def test_pixel_ids_resize(self, name, stride):
         h, w = 10, 10
         pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
         print(f"{pixel_ids = }")
