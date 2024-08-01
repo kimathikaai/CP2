@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 
 import lightning as L
 import numpy as np
@@ -156,7 +157,7 @@ def main(args):
 
     # setup callbacks
     lr_callback = LearningRateMonitor("epoch")
-    prefix = 'Binary' if args.num_classes == 2 else 'Multiclass'
+    prefix = "Binary" if args.num_classes == 2 else "Multiclass"
     checkpoint_callback = ModelCheckpoint(
         dirpath=args.run_dir,
         filename="{epoch}-{step}-{val_micro_iou:.2f}",
@@ -189,7 +190,7 @@ def main(args):
     #
     cfg = Config.fromfile(args.config)
     if args.pretrain_path is not None and args.pretrain_type != PretrainType.IMAGENET:
-        print(f'[INFO] Updating the pretrain_path to {args.pretrain_path = }')
+        print(f"[INFO] Updating the pretrain_path to {args.pretrain_path = }")
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
 
     cfg.model.decode_head.num_classes = args.num_classes
@@ -227,6 +228,9 @@ def main(args):
     if trainer.global_rank == 0:
         # wandb_logger.watch(model, log="all", log_graph=True)
         wandb_logger.experiment.config.update({"hyper-parameters": vars(args)})
+        wandb_logger.experiment.config.update(
+            {"nvidia-smi": subprocess.check_output(["nvidia-smi"]).decode()}
+        )
 
     # Train
     trainer.fit(model, datamodule=datamodule)

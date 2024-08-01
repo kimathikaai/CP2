@@ -4,6 +4,7 @@ import math
 import os
 import random
 import shutil
+import subprocess
 
 import albumentations as A
 import numpy as np
@@ -296,6 +297,9 @@ def main_worker(rank, args):
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
         wandb.config.update({"config_file": cfg})
+        wandb.config.update(
+            {"nvidia-smi": subprocess.check_output(["nvidia-smi"]).decode()}
+        )
         # define our custom x axis metric
         wandb.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
