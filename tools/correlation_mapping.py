@@ -22,7 +22,7 @@ def get_masked_iou(
 
     # The zero index is ignored, therefore increment all
     # ids by one then zero out the masked ones
-    zeros = torch.zeros(batch_size, 1)
+    zeros = torch.zeros(batch_size, 1, device=map_a.device)
     ids = torch.cat([zeros, map_a + 1, map_b + 1], dim=1)
     masks = torch.cat([zeros, mask_a, mask_b], dim=1)
     assert batch_size == ids.shape[0], f"{ids.shape = }"
