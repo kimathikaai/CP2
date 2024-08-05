@@ -1,5 +1,6 @@
 from enum import Enum
-
+# from mmdet.utils import register_all_modules
+# register_all_modules()
 import lightning as L
 import torch
 import torch.nn as nn
@@ -12,6 +13,7 @@ from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
 from util.pos_embed import interpolate_pos_embed
 from timm.models.layers import trunc_normal_
 import models.vit as models
+import timm
 BACKGROUND_CLASS = 0
 
 
@@ -50,9 +52,10 @@ class SegmentationModule(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model_name = model_name
-
+        
         # Initialize the model
         self.model = build_segmentor(model_config.model)
+        # self.model = model_config
         assert pretrain_type in PretrainType
         if pretrain_type == PretrainType.IMAGENET:
             self.model.backbone.init_cfg.checkpoint = "torchvision://resnet50"
@@ -60,9 +63,9 @@ class SegmentationModule(L.LightningModule):
         elif pretrain_type == PretrainType.RANDOM:
             pass
         elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL,PretrainType.CIM]:
-            checkpoint_path = self.model.backbone.init_cfg.checkpoint
-            checkpoint = torch.load(checkpoint_path)
             if pretrain_type != PretrainType.CIM:
+                checkpoint_path = self.model.backbone.init_cfg.checkpoint
+                checkpoint = torch.load(checkpoint_path)
                 assert (
                     checkpoint["pretrain_type"] == pretrain_type.name
                 ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
@@ -75,25 +78,47 @@ class SegmentationModule(L.LightningModule):
                 state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
                 print(self.model.load_state_dict(state_dict, strict=False))
             else:
-                checkpoint_model = checkpoint['model']
-                state_dict = self.model.state_dict()
-                model = models.__dict__[model_name](
-                    img_size=224, 
-                    num_classes=2, # Default 1000
-                    drop_path_rate=0.1,
-                    global_pool=True,
-                )
-                # state_dict = checkpoint["state_dict"]
-                for k in ['head.weight', 'head.bias']:
-                    if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                        print(f"Removing key {k} from pretrained checkpoint")
-                        del checkpoint_model[k]
-                # Interpolate position embedding
-                interpolate_pos_embed(model, checkpoint_model)
-                msg = self.model.load_state_dict(state_dict, strict=False)
-                print(msg)
-                # trunc_normal_(self.model.head.weight, std=2e-5)
+                if model_config.model.backbone.init_cfg.checkpoint is not None: # Fine Tuning on Pretrained model
+                    checkpoint_path = model_config.model.backbone.init_cfg.checkpoint 
+                    checkpoint = torch.load(checkpoint_path)
+                    
+                    state_dict = self.model.state_dict()
+                    checkpoint_model = checkpoint['model']
+                    for k in ['head.weight', 'head.bias']:
+                        if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+                            print(f"Removing key {k} from pretrained checkpoint")
+                            del checkpoint_model[k]
 
+                    # Interpolate position embedding
+                    # interpolate_pos_embed(self.model, checkpoint_model) -> This does not work as the model in mmseg is a bit different to the timm ViT
+                    msg = self.model.load_state_dict(checkpoint_model, strict=False)
+                    # msg = self.model.load_state_dict(state_dict, strict=False)
+                    print(msg)
+                else:
+                    # The Vit Model
+                    model = models.__dict__[model_name](
+                        img_size=224, 
+                        num_classes=2, # Default 1000
+                        drop_path_rate=0.1,
+                        global_pool=True,
+                    )
+                    # Pretrained timm model
+                    vit_model =  timm.create_model('vit_base_patch16_224', pretrained=True)
+    
+                    # Extract the relevant layers from ViT
+                    patch_embed = vit_model.patch_embed
+                    blocks = vit_model.blocks
+                
+                    # Assign pretrained weights to CIM's ViT backbone
+                    model.patch_embed.load_state_dict(patch_embed.state_dict())
+                    model.blocks.load_state_dict(blocks.state_dict())
+                    # model.norm.load_state_dict(norm.state_dict())
+                    state_dict = model.state_dict()
+
+                    # Interpolate position embedding
+                    # interpolate_pos_embed(model, checkpoint_model)
+                    msg = self.model.load_state_dict(state_dict, strict=False)
+                    print(msg)
         elif pretrain_type == PretrainType.MIRROR:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
@@ -109,9 +134,7 @@ class SegmentationModule(L.LightningModule):
 
         self.loss = nn.CrossEntropyLoss()
 
-        #
         # Metrics
-        #
         self.binary_task = self.num_classes == 2
         self.metric_task = "binary" if self.binary_task else "multiclass"
         self.ignore_index = None if self.binary_task else BACKGROUND_CLASS
@@ -157,8 +180,8 @@ class SegmentationModule(L.LightningModule):
 
     def forward(self, images):
         logits = self.model(images)
-
-        # resize from 32 -> 512
+        # print("Backbone Output Shape:", logits.shape)
+        # Resize from model output to image resolution
         logits = resize(
             input=logits,
             size=self.image_shape[1:],
@@ -172,10 +195,7 @@ class SegmentationModule(L.LightningModule):
     def shared_step(self, batch, stage: Stage):
         images, masks = batch
         logits, argmax_logits = self.forward(images)
-        # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, masks)
-
-        # update logs
         self.log(
             f"{stage.name.lower()}_loss",
             loss,
@@ -229,18 +249,9 @@ class SegmentationModule(L.LightningModule):
         return self.shared_step(batch, Stage.TEST)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
         )
-        # Using a scheduler is optional but can be helpful.
-        # The scheduler reduces the LR if the validation performance hasn't improved for the last N epochs
-        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        #     optimizer, mode="min", factor=0.2, patience=10, min_lr=5e-5
-        # )
-        return {
-            "optimizer": optimizer,
-            # "lr_scheduler": scheduler,
-            # "monitor": "val_loss",
-        }
+        return {"optimizer": optimizer}

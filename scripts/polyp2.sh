@@ -1,25 +1,30 @@
 #!/bin/bash
-base_dir_1='/fast_scratch_2/mahip/Correlational-Image-Modeling'
+base_dir_0='/mnt/pub0'
+base_dir_1='/mnt/pub1'
 log_dir="${base_dir_1}/cim-pretraining/logs"
-data_dir="${base_dir_1}/data"
+data_dir="${base_dir_1}/ssl-pretraining/data"
 pretrain_type=CIM 
 
 # hyper-parameter
 num_gpus=2
 
 
-pretrain_run_id=1236
-config_file='configs/config_finetune.py'
+pretrain_run_id=240803223358-pretrain-CIM
+config_file='configs/config_finetune_CIM2.py'
 echo "Started fine-tuning for ${pretrain_run_id}"
-for dir in CVC-ClinicDB Kvasir-SEG CVC-ColonDB ETIS-LaribPolypDB
+# Kvasir-SEG CVC-ColonDB ETIS-LaribPolypDB
+# 0.3
+#  1 2
+# --pretrain_path $log_dir/$pretrain_run_id/checkpoint-299.pth \
+for dir in CVC-ClinicDB 
 	do
-		for ratio in 1.0 0.3
+		for ratio in 1.0
 		do
-			for seed in 0 1 2
+			for seed in 0
 			do
 				run_id=$(date +"%y%m%d%H%M%S")-$dir-$pretrain_type-$ratio
 				current_dir=${data_dir}/${dir}
-				CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
+				CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
 					--pretrain_path $log_dir/$pretrain_run_id/checkpoint-299.pth \
 					--pretrain_type $pretrain_type \
 					--config $config_file \
@@ -32,9 +37,9 @@ for dir in CVC-ClinicDB Kvasir-SEG CVC-ColonDB ETIS-LaribPolypDB
 					--num_gpus $num_gpus \
 					--num_workers 32 \
 					--batch_size 16 \
-					--img_height 352 \
-					--img_width 352 \
-					--epochs 100
+					--img_height 512 \
+					--img_width 512 \
+					--epochs 300
 			done
 		done
 	done

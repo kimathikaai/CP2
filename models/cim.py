@@ -382,7 +382,7 @@ class CorrelationalAutoencoderViT(nn.Module):
 
     def forward(self, imgs, temps, masks):
         x, ts = self.forward_encoder(imgs, temps)
-        
+        print(f"Encoded output shape: {x.shape}")
         loss = 0.0
         if self.sigma_cont > 0.0:
             global_preds, targets = self.forward_head(x, ts)

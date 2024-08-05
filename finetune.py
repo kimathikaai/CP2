@@ -54,7 +54,7 @@ def get_args():
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
     parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
-    parser.add_argument('--model_name', default='vit_tiny_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model_name', default='vit_base_patch16', type=str, metavar='MODEL',
                         help='Name of model to train')
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
 
@@ -188,10 +188,38 @@ def main(args):
     #
     # Setup the model
     #
+    # if args.pretrain_type == PretrainType.CIM and args.pretrain_path is None:
+    #     cfg = Config.fromfile("mmsegmentation/configs/vit/vit_vit-b16_mln_upernet_8xb2-80k_ade20k-512x512.py")
+    #     norm_cfg = dict(type='SyncBN', requires_grad=True)
+    #     cfg.norm_cfg = dict(type='SyncBN', requires_grad=True)
+    #     cfg.model.backbone.norm_cfg = dict(type='SyncBN', requires_grad=True)
+
+        
+    #     decode_head=dict(
+    #     type='ASPPHead',
+    #     in_channels=2048,
+    #     in_index=3,
+    #     channels=512,
+    #     dilations=(1, 6, 12, 18),
+    #     dropout_ratio=0.1,
+    #     num_classes=None,
+    #     norm_cfg=norm_cfg,
+    #     align_corners=False,
+    #     loss_decode=dict(
+    #         type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0))
+        
+    #     cfg.model.decode_head = decode_head
+    #     cfg.model.auxiliary_head = None  # Adjust based on your dataset
+    #     cfg.load_from = 'checkpoints/upernet_vit-b16_mln_512x512_80k_ade20k_20210624_130547-0403cee1.pth'
+
+    # #    cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+    # else: 
     cfg = Config.fromfile(args.config)
+
     if args.pretrain_path is not None and args.pretrain_type != PretrainType.IMAGENET:
-        print(f'[INFO] Updating the pretrain_path to {args.pretrain_path = }')
-        cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+            print(f'[INFO] Updating the pretrain_path to {args.pretrain_path = }')
+            cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+
 
     cfg.model.decode_head.num_classes = args.num_classes
     model = SegmentationModule(
@@ -209,10 +237,11 @@ def main(args):
         for param in model.model.backbone.parameters():
             # not updated by gradient
             param.requires_grad = False
-
+    from lightning.pytorch.strategies import DDPStrategy
     # setup trainer
     trainer = L.Trainer(
         strategy="ddp" if args.num_gpus > 1 else "auto",
+        # DDPStrategy(find_unused_parameters=True) if args.num_gpus > 1 else "auto",
         accelerator="gpu",
         devices=args.num_gpus,
         sync_batchnorm=args.num_gpus > 1,
