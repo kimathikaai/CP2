@@ -573,7 +573,11 @@ if __name__ == "__main__":
     args.num_workers_per_dataset = args.num_workers // (args.world_size * 3)
     print(f"{args.num_workers_per_dataset = }")
 
-    cfg = Config.fromfile(args.config)
+    # Seed everything
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
     # spawn parallel process
     mp.spawn(main_worker, args=[args], nprocs=args.world_size)
