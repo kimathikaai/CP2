@@ -41,6 +41,7 @@ class MappingType(Enum):
 
     CP2 = 0
     PIXEL_PIXEL_REGION = 1
+    PIXEL_REGION = 2
 
 
 class AverageMeter(object):
@@ -168,7 +169,7 @@ class CP2_MOCO(nn.Module):
         # Validate the correlation map weight
         if mapping_type == MappingType.CP2:
             assert lmbd_corr_weight == 1
-        elif mapping_type == MappingType.PIXEL_PIXEL_REGION:
+        elif mapping_type == [MappingType.PIXEL_REGION, MappingType.PIXEL_PIXEL_REGION]:
             assert lmbd_corr_weight >= 1
         else:
             raise NotImplementedError(f"{mapping_type = }")
@@ -467,6 +468,7 @@ class CP2_MOCO(nn.Module):
         Output:
             logits, targets
         """
+        batch_size = img_a.size(0)
         mask_a, mask_b = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
         mask_a.to(bg0.device)
         mask_b.to(bg1.device)
@@ -520,18 +522,24 @@ class CP2_MOCO(nn.Module):
             mask_b=mask_b,
         )
         corr_map = results["corr_map"]
+
+        # If using pre-generated ids based on unsupervised region proposals
+        # we don't want to correlated pixels that have the 0 id
+        # since it denotes unkown regions. Therefore we need to remove them
+        # from the corr_map
+        if self.mapping_type == MappingType.PIXEL_REGION:
+            known_region_ids = torch.einsum(
+                "nx,ny->nxy",
+                [ids_a.reshape(batch_size, -1), ids_b.reshape(batch_size, -1)],
+            ).bool()
+            corr_map *= known_region_ids
+
         corr_weights = (self.lmbd_corr_weight * corr_map + ~corr_map).detach()
 
-        corr_map_a = results["corr_map_a"]
-        corr_map_b = results["corr_map_b"]
-        corr_map_a_masked = results["corr_map_a_masked"]
-        corr_map_b_masked = results["corr_map_b_masked"]
-
         # Flatten the masks
-        current_bs = img_a.size(0)
         hidden_image_size = mask_a.shape[1:]
-        mask_a = mask_a.reshape(current_bs, -1)
-        mask_b = mask_b.reshape(current_bs, -1)
+        mask_a = mask_a.reshape(batch_size, -1)
+        mask_b = mask_b.reshape(batch_size, -1)
 
         # Calculate the masked correlation ious
 
@@ -690,8 +698,8 @@ class CP2_MOCO(nn.Module):
             heatmaps_a = torch.stack(heatmaps_a).unsqueeze(1)
             heatmaps_b = torch.stack(heatmaps_b).unsqueeze(1)
 
-            m_a = mask_a.reshape(current_bs, *hidden_image_size).unsqueeze(1)
-            m_b = mask_b.reshape(current_bs, *hidden_image_size).unsqueeze(1)
+            m_a = mask_a.reshape(batch_size, *hidden_image_size).unsqueeze(1)
+            m_b = mask_b.reshape(batch_size, *hidden_image_size).unsqueeze(1)
 
             # Shift the heatmap range [0,1] to [-1,1]
             m_a = 2 * m_a - 1
