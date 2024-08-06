@@ -160,23 +160,29 @@ def prepare_data(rank, num_workers, args):
 
     # simply use RandomErasing for Copy-Paste implementation:
     # erase a random block of background image and replace the erased positions by foreground
-    augmentation_bg = [
-        transforms.RandomResizedCrop(
-            (args.img_height, args.img_width), scale=(0.2, 1.0)
-        ),
-        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        # normalize,
-        transforms.RandomErasing(
-            p=1.0,
-            scale=(args.foreground_min, args.foreground_max),
-            ratio=(0.8, 1.25),
-            value=0.0,
-        ),
-    ]
+    augmentation_bg = loader.BackgroundTransform(
+        transforms.Compose(
+            [
+                transforms.RandomResizedCrop(
+                    (args.img_height, args.img_width), scale=(0.2, 1.0)
+                ),
+                transforms.RandomApply(
+                    [transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8
+                ),
+                transforms.RandomGrayscale(p=0.2),
+                transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                # normalize,
+                transforms.RandomErasing(
+                    p=1.0,
+                    scale=(args.foreground_min, args.foreground_max),
+                    ratio=(0.8, 1.25),
+                    value=0.0,
+                ),
+            ]
+        )
+    )
 
     augmentation = loader.A_TwoCropsTransform(
         A.Compose(
@@ -190,6 +196,7 @@ def prepare_data(rank, num_workers, args):
                 A.HorizontalFlip(),
             ]
         ),
+        mapping_type=args.mapping_type,
         pixel_ids_stride=args.pixel_ids_stride,
     )
 
@@ -201,7 +208,7 @@ def prepare_data(rank, num_workers, args):
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
-        transform=transforms.Compose(augmentation_bg),
+        transform=augmentation_bg,
         directory_type=args.directory_type,
         split_name="train",
     )

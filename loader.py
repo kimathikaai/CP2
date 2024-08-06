@@ -1,7 +1,9 @@
 # tool functions from moco v2 code base:
 # https://github.com/facebookresearch/moco
 # Copyright (c) Facebook, Inc. and its affilates. All Rights Reserved
+import os
 import random
+from pathlib import Path
 
 import albumentations as A
 import cv2
@@ -10,6 +12,8 @@ import torch
 from PIL import Image, ImageFilter
 from torchvision import transforms as T
 from torchvision.transforms import functional as F
+
+from builder import MappingType
 
 
 class TwoCropsTransform:
@@ -24,11 +28,23 @@ class TwoCropsTransform:
         return [q, k]
 
 
+class BackgroundTransform:
+    def __init__(self, base_transform):
+        self.base_transform = base_transform
+
+    def __call__(self, x, path):
+        return self.base_transform(x)
+
+
 def rescale_ids(pixel_ids, stride):
     return pixel_ids[
         stride // 2 :: stride,
         stride // 2 :: stride,
     ]
+
+
+MASK_DIR = "SAM_Masks"
+MASK_EXT = ".png"
 
 
 class A_TwoCropsTransform:
@@ -37,13 +53,34 @@ class A_TwoCropsTransform:
     Take two random crops of one image as the query and key.
     """
 
-    def __init__(self, base_transform, pixel_ids_stride: int = 1):
+    def __init__(
+        self, base_transform, mapping_type: MappingType, pixel_ids_stride: int = 1
+    ):
         self.base_transform = base_transform
         self.to_tensor = T.ToTensor()
         assert pixel_ids_stride > 0
         self.pixel_ids_stride = pixel_ids_stride
+        assert mapping_type in MappingType
+        self.mapping_type = mapping_type
 
-    def __call__(self, x):
+    def get_pixel_ids(self, height, width, path):
+        pixel_ids = np.arange(start=1, stop=height * width + 1).reshape((height, width))
+
+        # Get the SAM generated pixel id map
+        if self.mapping_type == MappingType.PIXEL_REGION:
+            mask_name = Path(path).stem + MASK_EXT
+            mask_path = os.path.join(Path(path).parents[1], MASK_DIR, mask_name)
+            pixel_ids = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
+        # change the pixel id resolution
+        pixel_ids = rescale_ids(pixel_ids, self.pixel_ids_stride)
+        pixel_ids = cv2.resize(
+            pixel_ids, dsize=(height, width), interpolation=cv2.INTER_NEAREST_EXACT
+        )
+
+        return pixel_ids
+
+    def __call__(self, x, path):
         #
         # Generate pixel ids
         #
@@ -52,14 +89,7 @@ class A_TwoCropsTransform:
         # print(f"{sample.shape = }")
         h, w, c = sample.shape
         # Get an array of ids
-        pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
-        # print(f"{pixel_ids.shape = }")
-        pixel_ids = rescale_ids(pixel_ids, self.pixel_ids_stride)
-
-        # resize pixel ids
-        pixel_ids = cv2.resize(
-            pixel_ids, dsize=(h, w), interpolation=cv2.INTER_NEAREST_EXACT
-        )
+        pixel_ids = self.get_pixel_ids(h, w, path)
 
         #
         # Get the query and key images

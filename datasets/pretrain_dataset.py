@@ -93,7 +93,7 @@ class PretrainDataset(Dataset):
         path = self.images_list[index]
         sample = pil_image_loader(path)
         if self.transform is not None:
-            return self.transform(sample)
+            return self.transform(sample, path)
 
 
 def get_custom_pretrain_dataset(image_directory_list: List[str], split_name, transform):
