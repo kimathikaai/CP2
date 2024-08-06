@@ -186,8 +186,8 @@ class TestCorrelationMapping(unittest.TestCase):
 
 
 class TestIDMapResize(unittest.TestCase):
-    @parameterized.expand([('stride1', 1), ('stride2', 2)])
-    def test_pixel_ids_resize(self, name, stride):
+    @parameterized.expand([('stride1', 1, True), ('stride2', 2, False)])
+    def test_pixel_ids_resize(self, name, stride, match):
         h, w = 10, 10
         pixel_ids = np.arange(start=1, stop=h * w + 1).reshape((h, w))
         print(f"{pixel_ids = }")
@@ -201,6 +201,9 @@ class TestIDMapResize(unittest.TestCase):
         )
         print(f"{upsampled_pixel_ids = }")
         self.assertEqual(upsampled_pixel_ids.shape, pixel_ids.shape)
+
+        if match:
+            self.assertTrue(np.all(upsampled_pixel_ids == pixel_ids))
 
 
 if __name__ == "__main__":
