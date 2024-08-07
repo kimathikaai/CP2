@@ -75,7 +75,7 @@ class A_TwoCropsTransform:
         # change the pixel id resolution
         pixel_ids = rescale_ids(pixel_ids, self.pixel_ids_stride)
         pixel_ids = cv2.resize(
-            pixel_ids, dsize=(height, width), interpolation=cv2.INTER_NEAREST_EXACT
+            pixel_ids, dsize=(width, height), interpolation=cv2.INTER_NEAREST_EXACT
         )
 
         return pixel_ids
