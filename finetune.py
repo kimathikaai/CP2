@@ -240,7 +240,8 @@ def main(args):
     from lightning.pytorch.strategies import DDPStrategy
     # setup trainer
     trainer = L.Trainer(
-        strategy="ddp" if args.num_gpus > 1 else "auto",
+        strategy=DDPStrategy(find_unused_parameters=True) if args.num_gpus > 1 else "auto",
+        # "ddp" if args.num_gpus > 1 else "auto",
         # DDPStrategy(find_unused_parameters=True) if args.num_gpus > 1 else "auto",
         accelerator="gpu",
         devices=args.num_gpus,
