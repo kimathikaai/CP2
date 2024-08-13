@@ -23,20 +23,23 @@ do
 	echo "Started pre-training for ${pretrain_run_id}"
 	# Start pre-training
 	CUDA_VISIBLE_DEVICES=0,1 python main.py \
-	    --seed 0 \
-	    --run_id $pretrain_run_id \
-	    --log_dir $log_dir \
-	    --pretrain_type $pretrain_type \
-	    --data_dirs "$data_dir/CVC-ClinicDB/Images" "$data_dir/CVC-ColonDB/Images" "$data_dir/ETIS-LaribPolypDB/Images" "$data_dir/Kvasir-SEG/Images"   \
-	    --config $pretrain_config_file \
-	    --epochs 200 \
-	    --lr 0.001 \
-	    --num-workers 64 \
-	    --batch-size 32 \
-	    --world-size $num_gpus \
-	    --foreground_min 0.25 \
-	    --foreground_max 0.5 \
-	    --cap_queue
+        --seed 0 \
+        --run_id $pretrain_run_id \
+        --log_dir $log_dir \
+        --pretrain_type $pretrain_type \
+        --data_dirs "$data_dir/CVC-ClinicDB/Images" "$data_dir/CVC-ColonDB/Images" "$data_dir/ETIS-LaribPolypDB/Images" "$data_dir/Kvasir-SEG/Images"   \
+        --config $pretrain_config_file \
+        --epochs 200 \
+        --lr 0.001 \
+        --num-workers 64 \
+        --batch-size 32 \
+        --world-size $num_gpus \
+        --foreground_min 0.5 \
+        --foreground_max 0.8 \
+        --backbone_type 'DEEPLABV3' \
+        --mapping_type 'CP2' \
+        --lmbd_corr_weight 1 \
+        --cap_queue
 
 	# Get the correct config file
 	# if [[ "$pretrain_type" == "CP2" ]]; then

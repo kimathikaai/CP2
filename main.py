@@ -1,26 +1,21 @@
 import argparse
-import builtins
-import copy
 import logging
 import math
 import os
 import random
 import shutil
-import time
-from datetime import datetime
-from enum import Enum
+import subprocess
 
+import albumentations as A
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-import torchvision
 import torchvision.transforms as transforms
 import wandb
 # from mmcv.utils import Config
@@ -52,11 +47,14 @@ def get_args():
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
     parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], default=DatasetType.FILENAME.name)
     parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
+    parser.add_argument("--mapping_type", type=str, choices=[x.name for x in builder.MappingType], default=builder.MappingType.CP2.name)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
     # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
+    parser.add_argument('--lmbd_corr_weight', default=1, type=float)
+    parser.add_argument('--pixel_ids_stride', default=1, type=int)
     parser.add_argument('--unet_truncated_dec_blocks', default=2, type=int)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
@@ -113,6 +111,7 @@ def get_args():
     args.directory_type = DatasetType[args.directory_type]
     args.pretrain_type = PretrainType[args.pretrain_type]
     args.backbone_type = builder.BackboneType[args.backbone_type]
+    args.mapping_type = builder.MappingType[args.mapping_type]
 
     # lemon data
     if args.lemon_data:
@@ -140,47 +139,76 @@ def prepare_data(rank, num_workers, args):
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
-    augmentation = [
-        transforms.RandomResizedCrop(
-            (args.img_height, args.img_width), scale=(0.2, 1.0)
-        ),
-        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        # normalize,
-    ]
+
+    # augmentation = loader.TwoCropsTransform(
+    #     transforms.Compose(
+    #         [
+    #             transforms.RandomResizedCrop(
+    #                 (args.img_height, args.img_width), scale=(0.2, 1.0)
+    #             ),
+    #             transforms.RandomApply(
+    #                 [transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8
+    #             ),
+    #             transforms.RandomGrayscale(p=0.2),
+    #             transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
+    #             transforms.RandomHorizontalFlip(),
+    #             transforms.ToTensor(),
+    #             # normalize,
+    #         ]
+    #     )
+    # )
 
     # simply use RandomErasing for Copy-Paste implementation:
     # erase a random block of background image and replace the erased positions by foreground
-    augmentation_bg = [
-        transforms.RandomResizedCrop(
-            (args.img_height, args.img_width), scale=(0.2, 1.0)
+    augmentation_bg = loader.BackgroundTransform(
+        transforms.Compose(
+            [
+                transforms.RandomResizedCrop(
+                    (args.img_height, args.img_width), scale=(0.2, 1.0)
+                ),
+                transforms.RandomApply(
+                    [transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8
+                ),
+                transforms.RandomGrayscale(p=0.2),
+                transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                # normalize,
+                transforms.RandomErasing(
+                    p=1.0,
+                    scale=(args.foreground_min, args.foreground_max),
+                    ratio=(0.8, 1.25),
+                    value=0.0,
+                ),
+            ]
+        )
+    )
+
+    augmentation = loader.A_TwoCropsTransform(
+        A.Compose(
+            [
+                A.RandomResizedCrop(
+                    (args.img_height, args.img_width), scale=(0.2, 1.0)
+                ),
+                A.ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
+                A.ToGray(p=0.2),
+                loader.AGaussianBlur(p=0.5),
+                A.HorizontalFlip(),
+            ]
         ),
-        transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.RandomApply([loader.GaussianBlur([0.1, 2.0])], p=0.5),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        # normalize,
-        transforms.RandomErasing(
-            p=1.0,
-            scale=(args.foreground_min, args.foreground_max),
-            ratio=(0.8, 1.25),
-            value=0.0,
-        ),
-    ]
+        mapping_type=args.mapping_type,
+        pixel_ids_stride=args.pixel_ids_stride,
+    )
 
     train_dataset = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
-        transform=loader.TwoCropsTransform(transforms.Compose(augmentation)),
+        transform=augmentation,
         directory_type=args.directory_type,
         split_name="train",
     )
     train_dataset_bg = get_pretrain_dataset(
         image_directory_list=args.data_dirs,
-        transform=transforms.Compose(augmentation_bg),
+        transform=augmentation_bg,
         directory_type=args.directory_type,
         split_name="train",
     )
@@ -276,6 +304,9 @@ def main_worker(rank, args):
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
         wandb.config.update({"config_file": cfg})
+        wandb.config.update(
+            {"nvidia-smi": subprocess.check_output(["nvidia-smi"]).decode()}
+        )
         # define our custom x axis metric
         wandb.define_metric("step")
         # define which metrics will be plotted against it (e.g. all metrics
@@ -318,6 +349,8 @@ def main_worker(rank, args):
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
         backbone_type=args.backbone_type,
+        mapping_type=args.mapping_type,
+        lmbd_corr_weight=args.lmbd_corr_weight,
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         device=device,
         rank=rank,
@@ -325,8 +358,8 @@ def main_worker(rank, args):
     model.to(device)
     logger.info(model)
 
-    if rank==0:
-        wandb.config.update({'output_stride': model.output_stride})
+    if rank == 0:
+        wandb.config.update({"output_stride": model.output_stride})
 
     # import copy
     # # Initialize the model pretrained ImageNet weights
@@ -420,7 +453,7 @@ def main_worker(rank, args):
                         "state_dict": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "pretrain_type": args.pretrain_type.name,
-                        "backbone_type": args.backbone_type.name
+                        "backbone_type": args.backbone_type.name,
                     },
                     is_best=False,
                     filename=os.path.join(
@@ -450,9 +483,15 @@ def train(
         # data_time.update(time.time() - end)
         idx_a = 0
         idx_b = idx_a if args.same_foreground else 1
+        ids_a, ids_b = None, None
 
-        img_a = images[idx_a].to(model.device)
-        img_b = images[idx_b].to(model.device)
+        img_a, ids_a = images[idx_a]
+        img_a, ids_a = img_a.to(model.device), ids_a.to(model.device)
+
+        img_b, ids_b = images[idx_b]
+        img_b, ids_b = img_b.to(model.device), ids_b.to(model.device)
+
+        # validate ids and images
         bg0 = bg0.to(model.device)
         bg1 = bg1.to(model.device)
 
@@ -461,11 +500,13 @@ def train(
         loss = model(
             img_a=img_a,
             img_b=img_b,
+            ids_a=ids_a,
+            ids_b=ids_b,
             bg0=bg0,
             bg1=bg1,
             visualize=visualize,
             step=step,
-            new_epoch=new_epoch
+            new_epoch=new_epoch,
         )
         logger.info(f"{epoch = }, {step = }, {loss.item() = }")
 
@@ -532,7 +573,11 @@ if __name__ == "__main__":
     args.num_workers_per_dataset = args.num_workers // (args.world_size * 3)
     print(f"{args.num_workers_per_dataset = }")
 
-    cfg = Config.fromfile(args.config)
+    # Seed everything
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
     # spawn parallel process
     mp.spawn(main_worker, args=[args], nprocs=args.world_size)

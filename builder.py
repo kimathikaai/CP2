@@ -7,6 +7,7 @@ from enum import Enum
 import cv2
 import matplotlib
 import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
@@ -19,6 +20,8 @@ from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
 
 from networks.segment_network import PretrainType
+from tools.correlation_mapping import (get_correlation_map,
+                                       get_masked_correlation_map)
 
 
 class BackboneType(Enum):
@@ -29,6 +32,16 @@ class BackboneType(Enum):
     DEEPLABV3 = 0
     UNET_ENCODER_ONLY = 1
     UNET_TRUNCATED = 2
+
+
+class MappingType(Enum):
+    """
+    Used to determine how pixel level comparisons are made
+    """
+
+    CP2 = 0
+    PIXEL_PIXEL_REGION = 1
+    PIXEL_REGION = 2
 
 
 class AverageMeter(object):
@@ -74,7 +87,7 @@ class UNET_TRUNCATED(nn.Module):
         self.num_decoder_blocks = num_decoder_blocks
 
         # self.channels = self.model.encoder.out_channels[-1]
-        self.channels = decoder_channels[self.num_decoder_blocks-1]
+        self.channels = decoder_channels[self.num_decoder_blocks - 1]
         self.backbone = self.model.encoder
         # TODO: determine the size of this decoder output
         self.projector = nn.Sequential(
@@ -131,8 +144,10 @@ class CP2_MOCO(nn.Module):
         T=0.2,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
+        lmbd_corr_weight=1,
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
+        mapping_type=MappingType.CP2,
         unet_truncated_dec_blocks=2,
         device=None,
     ):
@@ -146,6 +161,19 @@ class CP2_MOCO(nn.Module):
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
         self.rank = rank
+        self.epoch = 0
+
+        assert mapping_type in MappingType
+        self.mapping_type = mapping_type
+
+        # Validate the correlation map weight
+        if mapping_type == MappingType.CP2:
+            assert lmbd_corr_weight == 1
+        elif mapping_type in [MappingType.PIXEL_REGION, MappingType.PIXEL_PIXEL_REGION]:
+            assert lmbd_corr_weight >= 1
+        else:
+            raise NotImplementedError(f"{mapping_type = }")
+        self.lmbd_corr_weight = lmbd_corr_weight
 
         assert pretrain_type in PretrainType
         self.pretrain_type = pretrain_type
@@ -183,7 +211,7 @@ class CP2_MOCO(nn.Module):
             raise NotImplementedError(f"{backbone_type = }")
 
         # Get the output stride
-        test_sample = torch.rand(1, 3, 224, 224)
+        test_sample = torch.rand(2, 3, 224, 224)
         output_shape = self.encoder_q(test_sample).shape
         self.output_stride = int(test_sample.shape[2] / output_shape[2])
         print(f"{self.output_stride = }")
@@ -242,6 +270,8 @@ class CP2_MOCO(nn.Module):
         self.cross_image_variance_target = AverageMeter(
             "Cross_Image_Variance_Target", ":6.2f"
         )
+        self.correlation_ious = []
+        self.masked_correlation_ious = []
 
     @torch.no_grad()
     def _momentum_update_key_encoder(self):
@@ -323,7 +353,9 @@ class CP2_MOCO(nn.Module):
         elif self.pretrain_type == PretrainType.MOCO:
             return self.forward_moco(**kwargs)
 
-    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_moco(
+        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+    ):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
@@ -379,7 +411,9 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_byol(
+        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+    ):
         def loss_byol(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -424,7 +458,9 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_cp2(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_cp2(
+        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+    ):
         """
         Input:
             im_q: a batch of query images
@@ -432,7 +468,12 @@ class CP2_MOCO(nn.Module):
         Output:
             logits, targets
         """
+        batch_size = img_a.size(0)
         mask_a, mask_b = (bg0[:, 0] == 0).float(), (bg1[:, 0] == 0).float()
+        mask_a.to(bg0.device)
+        mask_b.to(bg1.device)
+        _img_a = img_a.clone()
+        _img_b = img_b.clone()
         img_a = img_a * mask_a.unsqueeze(1) + bg0
         img_b = img_b * mask_b.unsqueeze(1) + bg1
 
@@ -442,15 +483,27 @@ class CP2_MOCO(nn.Module):
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
+        ids_a = ids_a[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
         mask_b = mask_b[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
+        ids_b = ids_b[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
 
         if visualize and self.rank == 0:
-            log_imgs = torch.stack([bg0, bg1, img_a, img_b], dim=1).flatten(0, 1)
-            log_grid = torchvision.utils.make_grid(log_imgs, nrow=4)
+            log_imgs = torch.stack(
+                [_img_a, _img_b, bg0, bg1, img_a, img_b], dim=1
+            ).flatten(0, 1)
+            log_grid = torchvision.utils.make_grid(log_imgs, nrow=6)
             wandb.log(
                 {
                     "train-examples": wandb.Image(
@@ -459,11 +512,42 @@ class CP2_MOCO(nn.Module):
                 }
             )
 
-        current_bs = img_a.size(0)
-        hidden_image_size = mask_a.shape[1:]
+        #
+        # Generate the pixel correspondence map
+        #
+        results = get_masked_correlation_map(
+            map_a=ids_a,
+            map_b=ids_b,
+            mask_a=mask_a,
+            mask_b=mask_b,
+        )
+        corr_map = results["corr_map"]
 
-        mask_a = mask_a.reshape(current_bs, -1)
-        mask_b = mask_b.reshape(current_bs, -1)
+        # If using pre-generated ids based on unsupervised region proposals
+        # we don't want to correlated pixels that have the 0 id
+        # since it denotes unkown regions. Therefore we need to remove them
+        # from the corr_map
+        if self.mapping_type == MappingType.PIXEL_REGION:
+            known_region_ids = torch.einsum(
+                "nx,ny->nxy",
+                [ids_a.reshape(batch_size, -1), ids_b.reshape(batch_size, -1)],
+            ).bool()
+            corr_map *= known_region_ids
+
+        corr_weights = (self.lmbd_corr_weight * corr_map + ~corr_map).detach()
+
+        # Flatten the masks
+        hidden_image_size = mask_a.shape[1:]
+        mask_a = mask_a.reshape(batch_size, -1)
+        mask_b = mask_b.reshape(batch_size, -1)
+
+        # Calculate the masked correlation ious
+
+        # Update correlation_ious
+        ious = list(results["iou"].detach().cpu().numpy())
+        ious_masked = list(results["iou_masked"].detach().cpu().numpy())
+        self.correlation_ious.extend(ious)
+        self.masked_correlation_ious.extend(ious_masked)
 
         # compute query features
         q = self.encoder_q(img_a)  # queries: NxCx14x14
@@ -502,6 +586,12 @@ class CP2_MOCO(nn.Module):
         # all the pixels in k versus all the pixels in q
         # mask_dense = torch.einsum("x,ny->nxy", [torch.ones().cuda(), mask_b])
         # mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
+
+        # Apply the weight mask
+        assert (
+            corr_weights.shape == logits_dense.shape
+        ), f"{corr_weights.shape = }, {logits_dense = }"
+        logits_dense *= corr_weights
 
         # moco logits
         l_pos = torch.einsum("nc,nc->n", [q_pos, k_pos]).unsqueeze(-1)
@@ -543,10 +633,47 @@ class CP2_MOCO(nn.Module):
             * 100.0
         )
 
-        #
-        # Create the foreground similarity score heatmap
-        #
         if new_epoch and self.rank == 0:
+            #
+            # Create the correlation map iou histogram
+            #
+            plt.figure(figsize=(10, 4))
+            plt.hist(self.correlation_ious, bins="auto")
+            plt.title("Histogram of IoU values")
+            plt.xlabel("IoU")
+            plt.ylabel("Frequency")
+            wandb.log({"feature_space_iou": wandb.Image(plt)})
+            # Number of non zero ious
+            non_zero_iou_count = np.count_nonzero(self.correlation_ious)
+            size = len(self.correlation_ious)
+            wandb.log({"feature_space_non_zero_iou": non_zero_iou_count})
+            wandb.log({"feature_space_non_zero_iou_ratio": non_zero_iou_count / size})
+            self.correlation_ious = []
+
+            #
+            # Create the masked correlation map iou histogram
+            #
+            plt.figure(figsize=(10, 4))
+            plt.hist(self.masked_correlation_ious, bins="auto")
+            plt.title("Histogram of Masked IoU values")
+            plt.xlabel("IoU")
+            plt.ylabel("Frequency")
+            wandb.log({"feature_space_masked_iou": wandb.Image(plt)})
+            # Number of non zero ious
+            non_zero_masked_iou_count = np.count_nonzero(self.masked_correlation_ious)
+            size = len(self.masked_correlation_ious)
+            wandb.log({"feature_space_non_zero_masked_iou": non_zero_masked_iou_count})
+            wandb.log(
+                {
+                    "feature_space_non_zero_masked_iou_ratio": non_zero_masked_iou_count
+                    / size
+                }
+            )
+            self.masked_correlation_ious = []
+
+            #
+            # Create the foreground similarity score heatmap
+            #
             heatmaps_a = []
             heatmaps_b = []
             for i in range(len(logits_dense)):
@@ -571,8 +698,8 @@ class CP2_MOCO(nn.Module):
             heatmaps_a = torch.stack(heatmaps_a).unsqueeze(1)
             heatmaps_b = torch.stack(heatmaps_b).unsqueeze(1)
 
-            m_a = mask_a.reshape(current_bs, *hidden_image_size).unsqueeze(1)
-            m_b = mask_b.reshape(current_bs, *hidden_image_size).unsqueeze(1)
+            m_a = mask_a.reshape(batch_size, *hidden_image_size).unsqueeze(1)
+            m_b = mask_b.reshape(batch_size, *hidden_image_size).unsqueeze(1)
 
             # Shift the heatmap range [0,1] to [-1,1]
             m_a = 2 * m_a - 1
@@ -606,6 +733,7 @@ class CP2_MOCO(nn.Module):
             log_grid = log_grid[:, :, :3]
 
             wandb.log({"dense-heatmaps": wandb.Image(log_grid)})
+            self.epoch += 1
 
         # Update logs
         self.loss_o.update(loss.item(), img_a.size(0))

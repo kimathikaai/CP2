@@ -22,7 +22,7 @@ do
 	pretrain_run_id=$(date +"%y%m%d%H%M%S")-pretrain-$pretrain_type
 	echo "Started pre-training for ${pretrain_run_id}"
 	# Start pre-training
-	CUDA_VISIBLE_DEVICES=0,1 python main.py \
+	CUDA_VISIBLE_DEVICES=1,2 python main.py \
 	    --seed 0 \
 	    --run_id $pretrain_run_id \
 	    --log_dir $log_dir \
@@ -37,41 +37,8 @@ do
 	    --foreground_min 0.25 \
 	    --foreground_max 0.5 \
         --backbone_type 'UNET_ENCODER_ONLY' \
+        --mapping_type 'PIXEL_PIXEL_REGION' \
+        --lmbd_corr_weight 10 \
 	    --cap_queue \
         --lemon_data
-
-	# Get the correct config file
-	# if [[ "$pretrain_type" == "CP2" ]]; then
-	# 	config_file='configs/config_finetune.py'
-	# else
-	# 	config_file='configs/config_finetune_moco.py'
-	# fi
-	config_file='configs/config_finetune.py'
-
-	echo "Started fine-tuning for ${pretrain_run_id}"
-	for dir in cgs-03
-	do
-		for ratio in 1.0
-		do
-			for seed in 0
-			do
-				run_id=$(date +"%y%m%d%H%M%S")-$dir-$pretrain_type-$ratio
-                current_dir=${base_dir_0}/${dir}
-				CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
-					--pretrain_path $log_dir/$pretrain_run_id/checkpoint.ckpt \
-					--pretrain_type $pretrain_type \
-					--config $config_file \
-					--seed $seed\
-					--run_id $run_id\
-					--log_dir $log_dir\
-					--img_dirs $current_dir/Images \
-					--mask_dirs $current_dir/SegmentationImages \
-					--train_data_ratio $ratio \
-					--num_gpus $num_gpus \
-					--num_workers 32 \
-					--batch_size 16 \
-                    --lemon_data
-			done
-		done
-	done
 done
