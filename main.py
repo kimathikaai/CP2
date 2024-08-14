@@ -46,7 +46,10 @@ def get_args():
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
     parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], default=DatasetType.FILENAME.name)
+
+    # Method
     parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
+    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
     parser.add_argument("--mapping_type", type=str, choices=[x.name for x in builder.MappingType], default=builder.MappingType.CP2.name)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
@@ -59,7 +62,6 @@ def get_args():
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
-    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
 
     parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
 
@@ -118,6 +120,11 @@ def get_args():
         args.directory_type = DatasetType.CSV
         args.img_height = 512
         args.img_width = 512
+
+    if args.pretrain_type == PretrainType.PROPOSED:
+        args.mapping_type = builder.MappingType.PIXEL_REGION
+        args.pixel_ids_stride = 1
+        args.lmbd_corr_weight = 2
 
     return args
 
