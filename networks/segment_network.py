@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
-from torch._dynamo.skipfiles import check
 from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
                           MetricCollection, Precision, Recall)
 
@@ -18,11 +17,12 @@ class PretrainType(Enum):
     """
 
     RANDOM = 0
-    IMAGENET = 1
+    NONE = 1
     CP2 = 2
     MIRROR = 3
     BYOL = 4
     MOCO = 5
+    PROPOSED = 6
 
 
 class Stage(Enum):
@@ -48,12 +48,18 @@ class SegmentationModule(L.LightningModule):
         # Initialize the model
         self.model = build_segmentor(model_config.model)
         assert pretrain_type in PretrainType
-        if pretrain_type == PretrainType.IMAGENET:
+        if pretrain_type == PretrainType.NONE:
+            # ImageNet initialization
             self.model.backbone.init_cfg.checkpoint = "torchvision://resnet50"
             self.model.backbone.init_weights()
         elif pretrain_type == PretrainType.RANDOM:
             pass
-        elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL]:
+        elif pretrain_type in [
+            PretrainType.CP2,
+            PretrainType.MOCO,
+            PretrainType.BYOL,
+            PretrainType.PROPOSED,
+        ]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             assert (
