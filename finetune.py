@@ -189,9 +189,12 @@ def main(args):
     # Setup the model
     #
     cfg = Config.fromfile(args.config)
-    if args.pretrain_path is not None and args.pretrain_type != PretrainType.IMAGENET:
+    # If no pretraining was used then assert that a path wasn't provided
+    if args.pretrain_path is not None:
+        assert args.pretrain_type != PretrainType.NONE
         print(f"[INFO] Updating the pretrain_path to {args.pretrain_path = }")
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+
 
     cfg.model.decode_head.num_classes = args.num_classes
     model = SegmentationModule(
