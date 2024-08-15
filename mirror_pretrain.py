@@ -211,7 +211,7 @@ def main(args):
     cfg.model.decode_head.contrast = False
     model = MirrorModule(
         model_config=cfg,
-        pretrain_type=PretrainType.IMAGENET,
+        pretrain_type=PretrainType.NONE,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
