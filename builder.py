@@ -352,6 +352,8 @@ class CP2_MOCO(nn.Module):
             return self.forward_byol(**kwargs)
         elif self.pretrain_type == PretrainType.MOCO:
             return self.forward_moco(**kwargs)
+        elif self.pretrain_type == PretrainType.PROPOSED:
+            return self.forward_cp2(**kwargs)
 
     def forward_moco(
         self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
@@ -751,10 +753,10 @@ class CP2_MOCO(nn.Module):
         if self.rank == 0:
             wandb.log({"train/loss_step": self.loss_o.val})
 
-            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2]:
+            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2,PretrainType.PROPOSED]:
                 wandb.log({"train/acc_ins_step": self.acc_ins.val})
 
-            if self.pretrain_type == PretrainType.CP2:
+            if self.pretrain_type == PretrainType.CP2 or self.pretrain_type == PretrainType.PROPOSED:
                 wandb.log(
                     {
                         "train/loss_ins_step": self.loss_i.val,
@@ -771,7 +773,7 @@ class CP2_MOCO(nn.Module):
         if self.rank == 0:
             wandb.log({"train/loss": self.loss_o.avg})
 
-            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2]:
+            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2,PretrainType.PROPOSED]:
                 wandb.log({"train/acc_ins": self.acc_ins.avg})
 
             if self.pretrain_type == PretrainType.CP2:
