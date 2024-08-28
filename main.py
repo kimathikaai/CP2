@@ -56,7 +56,9 @@ def get_args():
 
     # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
-    parser.add_argument('--lmbd_corr_weight', default=1, type=float)
+    parser.add_argument('--lmbd_region_corr_weight', default=1, type=float)
+    parser.add_argument('--lmbd_pixel_corr_weight', default=1, type=float)
+    parser.add_argument('--lmbd_not_corr_weight', default=1, type=float)
     parser.add_argument('--pixel_ids_stride', default=1, type=int)
     parser.add_argument('--unet_truncated_dec_blocks', default=2, type=int)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
@@ -120,11 +122,6 @@ def get_args():
         args.directory_type = DatasetType.CSV
         args.img_height = 512
         args.img_width = 512
-
-    if args.pretrain_type == PretrainType.PROPOSED:
-        args.mapping_type = builder.MappingType.PIXEL_REGION
-        args.pixel_ids_stride = 1
-        args.lmbd_corr_weight = 2
 
     return args
 
@@ -201,7 +198,8 @@ def prepare_data(rank, num_workers, args):
                 A.ToGray(p=0.2),
                 loader.AGaussianBlur(p=0.5),
                 A.HorizontalFlip(),
-            ]
+            ],
+            additional_targets={"region_ids": "mask"},
         ),
         mapping_type=args.mapping_type,
         pixel_ids_stride=args.pixel_ids_stride,
@@ -349,15 +347,23 @@ def main_worker(rank, args):
     # instantiate the model(it's your own model) and move it to the right device
     model = builder.CP2_MOCO(
         cfg,
-        m=0.999 if args.pretrain_type == PretrainType.CP2 or args.pretrain_type == PretrainType.PROPOSED else 0.996,
+        m=0.999
+        if args.pretrain_type == PretrainType.CP2
+        or args.pretrain_type == PretrainType.PROPOSED
+        else 0.996,
         K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
-        dim=128 if args.pretrain_type == PretrainType.CP2 or args.pretrain_type == PretrainType.PROPOSED else 256,
+        dim=128
+        if args.pretrain_type == PretrainType.CP2
+        or args.pretrain_type == PretrainType.PROPOSED
+        else 256,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
         backbone_type=args.backbone_type,
         mapping_type=args.mapping_type,
-        lmbd_corr_weight=args.lmbd_corr_weight,
+        lmbd_pixel_corr_weight=args.lmbd_pixel_corr_weight,
+        lmbd_region_corr_weight=args.lmbd_pixel_corr_weight,
+        lmbd_not_corr_weight=args.lmbd_not_corr_weight,
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         device=device,
         rank=rank,
@@ -492,11 +498,23 @@ def train(
         idx_b = idx_a if args.same_foreground else 1
         ids_a, ids_b = None, None
 
-        img_a, ids_a = images[idx_a]
-        img_a, ids_a = img_a.to(model.device), ids_a.to(model.device)
+        # Sample A
+        sample_a = images[idx_a]
+        img_a, pixel_ids_a, region_ids_a = sample_a
+        img_a, pixel_ids_a, region_ids_a = (
+            img_a.to(model.device),
+            pixel_ids_a.to(model.device),
+            region_ids_a.to(model.device),
+        )
 
-        img_b, ids_b = images[idx_b]
-        img_b, ids_b = img_b.to(model.device), ids_b.to(model.device)
+        # Sample B
+        sample_b = images[idx_b]
+        img_b, pixel_ids_b, region_ids_b = sample_b
+        img_b, pixel_ids_b, region_ids_b = (
+            img_b.to(model.device),
+            pixel_ids_b.to(model.device),
+            region_ids_b.to(model.device),
+        )
 
         # validate ids and images
         bg0 = bg0.to(model.device)
@@ -504,17 +522,32 @@ def train(
 
         visualize = epoch == 0 and i == 0
         new_epoch = i == 0
-        loss = model(
-            img_a=img_a,
-            img_b=img_b,
-            ids_a=ids_a,
-            ids_b=ids_b,
-            bg0=bg0,
-            bg1=bg1,
-            visualize=visualize,
-            step=step,
-            new_epoch=new_epoch,
-        )
+        if args.pretrain_type in [PretrainType.CP2, PretrainType.PROPOSED]:
+            loss = model(
+                img_a=img_a,
+                img_b=img_b,
+                pixel_ids_a=pixel_ids_a,
+                pixel_ids_b=pixel_ids_b,
+                region_ids_a=region_ids_a,
+                region_ids_b=region_ids_b,
+                bg0=bg0,
+                bg1=bg1,
+                visualize=visualize,
+                step=step,
+                new_epoch=new_epoch,
+            )
+        else:
+            loss = model(
+                img_a=img_a,
+                img_b=img_b,
+                ids_a=ids_a,
+                ids_b=ids_b,
+                bg0=bg0,
+                bg1=bg1,
+                visualize=visualize,
+                step=step,
+                new_epoch=new_epoch,
+            )
         logger.info(f"{epoch = }, {step = }, {loss.item() = }")
 
         # compute gradient and do SGD step
