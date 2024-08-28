@@ -40,8 +40,9 @@ class MappingType(Enum):
     """
 
     CP2 = 0
-    PIXEL_PIXEL_REGION = 1
-    PIXEL_REGION = 2
+    PIXEL_ID = 1
+    REGION_ID = 2
+    PIXEL_REGION_ID = 3
 
 
 class AverageMeter(object):
@@ -144,7 +145,9 @@ class CP2_MOCO(nn.Module):
         T=0.2,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
-        lmbd_corr_weight=1,
+        lmbd_pixel_corr_weight=1,
+        lmbd_region_corr_weight=1,
+        lmbd_not_corr_weight=1,
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
         mapping_type=MappingType.CP2,
@@ -168,12 +171,23 @@ class CP2_MOCO(nn.Module):
 
         # Validate the correlation map weight
         if mapping_type == MappingType.CP2:
-            assert lmbd_corr_weight == 1
-        elif mapping_type in [MappingType.PIXEL_REGION, MappingType.PIXEL_PIXEL_REGION]:
-            assert lmbd_corr_weight >= 1
+            assert lmbd_pixel_corr_weight == 1
+            assert lmbd_region_corr_weight == 1
+            assert lmbd_not_corr_weight == 1
+        elif mapping_type == MappingType.PIXEL_ID:
+            assert lmbd_region_corr_weight == 1
+            assert lmbd_pixel_corr_weight > 1
+        elif mapping_type == MappingType.REGION_ID:
+            assert lmbd_pixel_corr_weight == 1
+            assert lmbd_region_corr_weight > 1
+        elif mapping_type == MappingType.PIXEL_REGION_ID:
+            assert lmbd_pixel_corr_weight > 1
+            assert lmbd_region_corr_weight > 1
         else:
             raise NotImplementedError(f"{mapping_type = }")
-        self.lmbd_corr_weight = lmbd_corr_weight
+        self.lmbd_pixel_corr_weight = lmbd_pixel_corr_weight
+        self.lmbd_region_corr_weight = lmbd_region_corr_weight
+        self.lmbd_not_corr_weight = lmbd_not_corr_weight
 
         assert pretrain_type in PretrainType
         self.pretrain_type = pretrain_type
@@ -354,10 +368,10 @@ class CP2_MOCO(nn.Module):
             return self.forward_moco(**kwargs)
         elif self.pretrain_type == PretrainType.PROPOSED:
             return self.forward_cp2(**kwargs)
+        else:
+            raise NotImplementedError(f"{self.pretrain_type = }")
 
-    def forward_moco(
-        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
-    ):
+    def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         if visualize and self.rank == 0:
             log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
@@ -413,9 +427,7 @@ class CP2_MOCO(nn.Module):
 
         return loss
 
-    def forward_byol(
-        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
-    ):
+    def forward_byol(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         def loss_byol(x, y):
             x = F.normalize(x, dim=-1, p=2)
             y = F.normalize(y, dim=-1, p=2)
@@ -461,7 +473,18 @@ class CP2_MOCO(nn.Module):
         return loss
 
     def forward_cp2(
-        self, img_a, img_b, bg0, bg1, visualize, step, new_epoch, ids_a, ids_b
+        self,
+        img_a,
+        img_b,
+        bg0,
+        bg1,
+        visualize,
+        step,
+        new_epoch,
+        pixel_ids_a,
+        pixel_ids_b,
+        region_ids_a,
+        region_ids_b,
     ):
         """
         Input:
@@ -479,23 +502,35 @@ class CP2_MOCO(nn.Module):
         img_a = img_a * mask_a.unsqueeze(1) + bg0
         img_b = img_b * mask_b.unsqueeze(1) + bg1
 
-        # update map to correct size
+        # Update A
         mask_a = mask_a[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
-        ids_a = ids_a[
+        pixel_ids_a = pixel_ids_a[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
+        region_ids_a = region_ids_a[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
+
+        # Update B
         mask_b = mask_b[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
         ]
-        ids_b = ids_b[
+        pixel_ids_b = pixel_ids_b[
+            :,
+            self.output_stride // 2 :: self.output_stride,
+            self.output_stride // 2 :: self.output_stride,
+        ]
+        region_ids_b = region_ids_b[
             :,
             self.output_stride // 2 :: self.output_stride,
             self.output_stride // 2 :: self.output_stride,
@@ -517,26 +552,45 @@ class CP2_MOCO(nn.Module):
         #
         # Generate the pixel correspondence map
         #
-        results = get_masked_correlation_map(
-            map_a=ids_a,
-            map_b=ids_b,
+        pixel_corr_results = get_masked_correlation_map(
+            map_a=pixel_ids_a,
+            map_b=pixel_ids_b,
             mask_a=mask_a,
             mask_b=mask_b,
         )
-        corr_map = results["corr_map"]
+        pixel_corr_map = pixel_corr_results["corr_map"]
+        #
+        # Generation the region correspondence map
+        region_corr_results = get_masked_correlation_map(
+            map_a=region_ids_a,
+            map_b=region_ids_b,
+            mask_a=mask_a,
+            mask_b=mask_b,
+        )
+        region_corr_map = region_corr_results["corr_map"]
 
         # If using pre-generated ids based on unsupervised region proposals
         # we don't want to correlated pixels that have the 0 id
         # since it denotes unkown regions. Therefore we need to remove them
         # from the corr_map
-        if self.mapping_type == MappingType.PIXEL_REGION:
-            known_region_ids = torch.einsum(
-                "nx,ny->nxy",
-                [ids_a.reshape(batch_size, -1), ids_b.reshape(batch_size, -1)],
-            ).bool()
-            corr_map *= known_region_ids
+        known_region_ids = torch.einsum(
+            "nx,ny->nxy",
+            [
+                region_ids_a.reshape(batch_size, -1),
+                region_ids_b.reshape(batch_size, -1),
+            ],
+        ).bool()
+        region_corr_map *= known_region_ids
 
-        corr_weights = (self.lmbd_corr_weight * corr_map + ~corr_map).detach()
+        #
+        # Get the correspondence weights
+        #
+        # Calculate the region level values
+        corr_weights = self.lmbd_region_corr_weight * region_corr_map
+        # Then apply the pixel level values
+        corr_weights[torch.where(pixel_corr_map)] = self.lmbd_pixel_corr_weight
+        # Then apple the other pixel values
+        corr_weights = (~pixel_corr_map * self.lmbd_not_corr_weight).detach()
 
         # Flatten the masks
         hidden_image_size = mask_a.shape[1:]
@@ -546,8 +600,8 @@ class CP2_MOCO(nn.Module):
         # Calculate the masked correlation ious
 
         # Update correlation_ious
-        ious = list(results["iou"].detach().cpu().numpy())
-        ious_masked = list(results["iou_masked"].detach().cpu().numpy())
+        ious = list(region_corr_results["iou"].detach().cpu().numpy())
+        ious_masked = list(region_corr_results["iou_masked"].detach().cpu().numpy())
         self.correlation_ious.extend(ious)
         self.masked_correlation_ious.extend(ious_masked)
 
@@ -753,10 +807,17 @@ class CP2_MOCO(nn.Module):
         if self.rank == 0:
             wandb.log({"train/loss_step": self.loss_o.val})
 
-            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2,PretrainType.PROPOSED]:
+            if self.pretrain_type in [
+                PretrainType.MOCO,
+                PretrainType.CP2,
+                PretrainType.PROPOSED,
+            ]:
                 wandb.log({"train/acc_ins_step": self.acc_ins.val})
 
-            if self.pretrain_type == PretrainType.CP2 or self.pretrain_type == PretrainType.PROPOSED:
+            if (
+                self.pretrain_type == PretrainType.CP2
+                or self.pretrain_type == PretrainType.PROPOSED
+            ):
                 wandb.log(
                     {
                         "train/loss_ins_step": self.loss_i.val,
@@ -773,7 +834,11 @@ class CP2_MOCO(nn.Module):
         if self.rank == 0:
             wandb.log({"train/loss": self.loss_o.avg})
 
-            if self.pretrain_type in [PretrainType.MOCO, PretrainType.CP2,PretrainType.PROPOSED]:
+            if self.pretrain_type in [
+                PretrainType.MOCO,
+                PretrainType.CP2,
+                PretrainType.PROPOSED,
+            ]:
                 wandb.log({"train/acc_ins": self.acc_ins.avg})
 
             if self.pretrain_type == PretrainType.CP2:
