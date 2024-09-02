@@ -23,6 +23,7 @@ class PretrainType(Enum):
     BYOL = 4
     MOCO = 5
     PROPOSED = 6
+    PIXPRO = 7
 
 
 class Stage(Enum):
@@ -66,9 +67,9 @@ class SegmentationModule(L.LightningModule):
                 checkpoint["pretrain_type"] == pretrain_type.name
             ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
-                x.replace("module.encoder_k.", ""): y
+                x.replace("module.encoder_q.", ""): y
                 for x, y in checkpoint["state_dict"].items()
-                if "encoder_k" in x
+                if "encoder_q" in x
             }
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
@@ -80,6 +81,20 @@ class SegmentationModule(L.LightningModule):
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             print(self.load_state_dict(state_dict, strict=False))
+        elif pretrain_type == PretrainType.PIXPRO:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            # Check that the weights match the type
+            assert (
+                checkpoint["pretrain_type"] == pretrain_type.name
+            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            state_dict = {
+                x.replace("encoder.", ""): y
+                for x, y in checkpoint["model"].items()
+                if "encoder." in x
+            }
+            print(self.model.backbone.load_state_dict(state_dict, strict=True))
+
         else:
             raise NotImplementedError(f"{pretrain_type = }")
 
