@@ -89,9 +89,9 @@ class SegmentationModule(L.LightningModule):
                 checkpoint["pretrain_type"] == pretrain_type.name
             ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
-                x.replace("encoder.", ""): y
+                x.replace("module.encoder.", ""): y
                 for x, y in checkpoint["model"].items()
-                if "encoder." in x
+                if "module.encoder." in x
             }
             print(self.model.backbone.load_state_dict(state_dict, strict=True))
 
