@@ -4,6 +4,7 @@ base_dir_1='/mnt/pub1'
 log_dir="${base_dir_1}/ssl-pretraining/logs"
 data_dir="${base_dir_1}/ssl-pretraining/data"
 
+num_gpus=2
 finetune_config_file='configs/config_finetune.py'
 
 # Run tests
