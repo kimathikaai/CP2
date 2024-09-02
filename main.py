@@ -313,11 +313,11 @@ def main_worker(rank, args):
             {"nvidia-smi": subprocess.check_output(["nvidia-smi"]).decode()}
         )
         # define our custom x axis metric
-        wandb.define_metric("step")
-        # define which metrics will be plotted against it (e.g. all metrics
-        # under 'train')
-        wandb.define_metric("train/*", step_metric="step")
-        wandb.define_metric("learning_rate", step_metric="step")
+        # wandb.define_metric("step")
+        # # define which metrics will be plotted against it (e.g. all metrics
+        # # under 'train')
+        # wandb.define_metric("train/*", step_metric="step")
+        # wandb.define_metric("learning_rate", step_metric="step")
 
     # setup process groups
     setup(rank, args)
