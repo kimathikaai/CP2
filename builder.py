@@ -590,7 +590,9 @@ class CP2_MOCO(nn.Module):
         # Then apply the pixel level values
         corr_weights[torch.where(pixel_corr_map)] = self.lmbd_pixel_corr_weight
         # Then apple the other pixel values
-        corr_weights = (~pixel_corr_map * self.lmbd_not_corr_weight).detach()
+        # corr_weights = (~pixel_corr_map * self.lmbd_not_corr_weight).detach()
+        corr_weights += (~(corr_weights.bool()) * self.lmbd_not_corr_weight).detach()
+        # pix = 10, region = 1, not=0 | pix = 10, region=0, not=0 | pix=10, region=0, not=1
 
         # Flatten the masks
         hidden_image_size = mask_a.shape[1:]
