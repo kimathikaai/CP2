@@ -92,6 +92,7 @@ def get_args():
                         metavar='N', help='total batch size over all GPUs')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
                         metavar='LR', help='initial learning rate', dest='lr')
+    parser.add_argument('--remove_lr_scheduler', action='store_true', help='Stop using the lr scheduler')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum of SGD solver')
     parser.add_argument('--optim', default='sgd', help='optimizer')
@@ -449,7 +450,7 @@ def main_worker(rank, args):
         train_sampler.set_epoch(epoch)
         train_sampler_bg0.set_epoch(epoch)
         train_sampler_bg1.set_epoch(epoch)
-        lr = adjust_learning_rate(optimizer, epoch, args)
+        lr = args.lr if args.remove_lr_scheduler else adjust_learning_rate(optimizer, epoch, args)
         logger.info(f"Beginning {epoch = }")
 
         if rank == 0:
