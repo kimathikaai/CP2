@@ -125,12 +125,12 @@ def get_args():
         args.img_height = 512
         args.img_width = 512
 
-    if args.pretrain_type == PretrainType.PROPOSED:
-        args.mapping_type = builder.MappingType.PIXEL_REGION_ID
-        args.lmbd_not_corr_weight = 0
-        args.lmbd_pixel_corr_weight = 10
-        args.lmbd_region_corr_weight = 1
-        args.pixel_ids_stride = 1
+    # if args.pretrain_type == PretrainType.PROPOSED:
+    #     args.mapping_type = builder.MappingType.PIXEL_REGION_ID
+    #     args.lmbd_not_corr_weight = 0
+    #     args.lmbd_pixel_corr_weight = 10
+    #     args.lmbd_region_corr_weight = 1
+    #     args.pixel_ids_stride = 1
 
 
     return args
