@@ -20,7 +20,8 @@ from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
 
 from networks.segment_network import PretrainType
-from tools.correlation_mapping import (get_correlation_map,
+from tools.correlation_mapping import (calcuate_dense_loss_stats,
+                                       get_correlation_map,
                                        get_masked_correlation_map)
 
 
@@ -134,6 +135,14 @@ class UNET_ENCODER_ONLY(nn.Module):
         return projection
 
 
+class NegativeType(Enum):
+    """Determine the type of dense negative similarity post processing"""
+
+    NONE = 0
+    FIXED = 1
+    AVERAGE = 2
+
+
 class CP2_MOCO(nn.Module):
     def __init__(
         self,
@@ -148,6 +157,7 @@ class CP2_MOCO(nn.Module):
         lmbd_pixel_corr_weight=1,
         lmbd_region_corr_weight=1,
         lmbd_not_corr_weight=1,
+        negative_type=NegativeType.NONE,
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
         mapping_type=MappingType.CP2,
@@ -192,6 +202,9 @@ class CP2_MOCO(nn.Module):
 
         assert pretrain_type in PretrainType
         self.pretrain_type = pretrain_type
+
+        assert negative_type in NegativeType
+        self.negative_type = negative_type
 
         assert backbone_type in BackboneType
         self.backbone_type = backbone_type
@@ -638,19 +651,49 @@ class CP2_MOCO(nn.Module):
 
         # dense logits
         # pixel to pixel cosine similarities
-        logits_dense = torch.einsum("ncx,ncy->nxy", [q_dense, k_dense])  # Nx196x196
+        _logits_dense = torch.einsum("ncx,ncy->nxy", [q_dense, k_dense])  # Nx196x196
         # a correspondenc map between all pixel pairs
-        labels_dense = torch.einsum("nx,ny->nxy", [mask_a, mask_b])
-        labels_dense = labels_dense.reshape(labels_dense.shape[0], -1)
+        _labels_dense = torch.einsum("nx,ny->nxy", [mask_a, mask_b])
+        labels_dense = _labels_dense.reshape(_labels_dense.shape[0], -1)
         # all the pixels in k versus all the pixels in q
         # mask_dense = torch.einsum("x,ny->nxy", [torch.ones().cuda(), mask_b])
         # mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
 
+        # Other stats
+        (
+            positive_scores_average,
+            negative_scores_average,
+        ) = calcuate_dense_loss_stats(_logits_dense, _labels_dense)
+
+        # Don't focus on negatives that are too similar or already pretty far
+        if self.negative_type == NegativeType.FIXED:
+            negative_scores = torch.where(~(_labels_dense.bool()))
+            _logits_dense[negative_scores] = (
+                2 / (1 + torch.exp(_logits_dense[negative_scores] * -2)) - 1
+            )
+        # Shift the center based on the average score
+        elif self.negative_type == NegativeType.AVERAGE:
+            negative_scores = torch.where(~(_labels_dense.bool()))
+            _logits_dense[negative_scores] = (
+                2
+                / (
+                    1
+                    + torch.exp(
+                        (_logits_dense[negative_scores] - negative_scores_average) * -2
+                    )
+                )
+                - 1
+            )
+        elif self.negative_type == NegativeType.NONE:
+            pass
+        else:
+            raise NotImplemented(f"{self.negative_type = }")
+
         # Apply the weight mask
         assert (
-            corr_weights.shape == logits_dense.shape
-        ), f"{corr_weights.shape = }, {logits_dense = }"
-        logits_dense *= corr_weights
+            corr_weights.shape == _logits_dense.shape
+        ), f"{corr_weights.shape = }, {_logits_dense.shape = }"
+        logits_dense = _logits_dense * corr_weights
 
         # moco logits
         l_pos = torch.einsum("nc,nc->n", [q_pos, k_pos]).unsqueeze(-1)
@@ -828,6 +871,8 @@ class CP2_MOCO(nn.Module):
                         "train/acc_seg_step": self.acc_seg.val,
                         "train/cross_image_variance_source_step": self.cross_image_variance_source.val,
                         "train/cross_image_variance_target_step": self.cross_image_variance_target.val,
+                        "train/+ive_scores_step": positive_scores_average.mean(),
+                        "train/-ive_scores_step": negative_scores_average.mean(),
                     }
                 )
 
