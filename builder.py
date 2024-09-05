@@ -268,6 +268,9 @@ class CP2_MOCO(nn.Module):
                 nn.ReLU(inplace=True),
                 nn.Linear(in_features=hidden_features, out_features=self.dim),
             )
+        elif pretrain_type == PretrainType.CP2:
+            assert self.negative_type == NegativeType.NONE
+            assert self.mapping_type == MappingType.CP2
 
         # Exact copy parameters
         for param_q, param_k in zip(
@@ -679,7 +682,7 @@ class CP2_MOCO(nn.Module):
                 / (
                     1
                     + torch.exp(
-                        (_logits_dense[negative_scores] - negative_scores_average) * -2
+                        (_logits_dense[negative_scores] - negative_scores_average.detach()) * -2
                     )
                 )
                 - 1

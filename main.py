@@ -52,6 +52,7 @@ def get_args():
     parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
     parser.add_argument("--mapping_type", type=str, choices=[x.name for x in builder.MappingType], default=builder.MappingType.CP2.name)
+    parser.add_argument("--negative_type", type=str, choices=[x.name for x in builder.NegativeType], default=builder.NegativeType.NONE.name)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
@@ -118,6 +119,7 @@ def get_args():
     args.pretrain_type = PretrainType[args.pretrain_type]
     args.backbone_type = builder.BackboneType[args.backbone_type]
     args.mapping_type = builder.MappingType[args.mapping_type]
+    args.negative_type = builder.NegativeType[args.negative_type]
 
     # lemon data
     if args.lemon_data:
@@ -371,6 +373,7 @@ def main_worker(rank, args):
         pretrain_type=args.pretrain_type,
         backbone_type=args.backbone_type,
         mapping_type=args.mapping_type,
+        negative_type=args.negative_type,
         lmbd_pixel_corr_weight=args.lmbd_pixel_corr_weight,
         lmbd_region_corr_weight=args.lmbd_pixel_corr_weight,
         lmbd_not_corr_weight=args.lmbd_not_corr_weight,
