@@ -682,7 +682,7 @@ class CP2_MOCO(nn.Module):
                 / (
                     1
                     + torch.exp(
-                        (_logits_dense[negative_scores] - negative_scores_average.detach()) * -2
+                        (_logits_dense - negative_scores_average.detach().reshape(-1,1,1))[negative_scores] * -2
                     )
                 )
                 - 1
