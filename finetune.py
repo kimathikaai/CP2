@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument('--img_width', default=512, type=int)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
-    parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
+    parser.add_argument("--learning_rate", type=float, default=0.0001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=20, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
