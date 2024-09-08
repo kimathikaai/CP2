@@ -233,6 +233,7 @@ do
                     CUDA_VISIBLE_DEVICES=0,1 python main.py \
                     --seed 0 \
                     --run_id $pretrain_run_id \
+                    --tags $tags \
                     --log_dir $log_dir \
                     --pretrain_type $pretrain_type \
                     --data_dirs "$data_dir/CVC-ClinicDB/Images" "$data_dir/CVC-ColonDB/Images" "$data_dir/ETIS-LaribPolypDB/Images" "$data_dir/Kvasir-SEG/Images"   \
@@ -273,6 +274,7 @@ do
                                     --config $finetune_config_file \
                                     --seed $seed\
                                     --run_id $run_id\
+                                    --tags $tags \
                                     --log_dir $log_dir\
                                     --img_dirs $current_dir/Images \
                                     --mask_dirs $current_dir/SegmentationImages \
