@@ -54,7 +54,7 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=20, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
-    parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
+    parser.add_argument("--pretrain_path", type=str, default='', help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
 
     parser.add_argument("--linear_evaluation", action='store_true', help="Freeze the encoder")
@@ -190,10 +190,13 @@ def main(args):
     #
     cfg = Config.fromfile(args.config)
     # If no pretraining was used then assert that a path wasn't provided
-    if args.pretrain_path is not None:
+    if args.pretrain_path:
         assert args.pretrain_type != PretrainType.NONE
         print(f"[INFO] Updating the pretrain_path to {args.pretrain_path = }")
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+    else:
+        # Using empty string to denote no path
+        assert args.pretrain_path == '', f"{args.pretrain_path = }"
 
 
     cfg.model.decode_head.num_classes = args.num_classes
