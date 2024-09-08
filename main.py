@@ -38,6 +38,7 @@ def get_args():
 
     parser.add_argument('--config', help='path to configuration file')
     parser.add_argument("--run_id", required=True, type=str, help='Unique identifier for a run')
+    parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
@@ -311,12 +312,13 @@ def main_worker(rank, args):
 
     # initialize wandb for the main process
     if rank == 0:
+        tags = ["pretrain"] + args.tags
         wandb.init(
             name=args.run_id,
             project=args.wandb_project,
             entity=args.wandb_team,
             dir=args.run_log_dir,
-            tags=["pretrain"],
+            tags=tags,
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
