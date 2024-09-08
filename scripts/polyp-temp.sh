@@ -11,6 +11,7 @@ pretrain_config_file='configs/config_pretrain.py'
 
 # Run tests
 python -m unittest discover -s tests  -v
+tags="$(date +%m-%d-%H%M%S)"
 
 
 pretrain_type='NONE'
