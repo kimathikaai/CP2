@@ -174,7 +174,7 @@ def main(args):
     custom_callback = CustomCallback(images=images, masks=masks)
 
     # wandb logger
-    tags = ["finetune"] + args.tags
+    tags = ["finetune", "deterministic"] + args.tags
     if args.linear_evaluation:
         tags += ["linear-evaluation"]
     wandb_logger = WandbLogger(
