@@ -217,6 +217,7 @@ def main(args):
 
     # setup trainer
     trainer = L.Trainer(
+        deterministic=True,
         strategy="ddp" if args.num_gpus > 1 else "auto",
         accelerator="gpu",
         devices=args.num_gpus,
