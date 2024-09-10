@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
 
-from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
+from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader,read_paths_csv, get_file_stem
 
 DATA_RANDOM_SEED = 0
 BASE_TRAIN_SPLIT = 0.7
@@ -61,6 +61,21 @@ def get_data_splits(
         data["train"] = [(x, y) for x, y in image_mask_paths if "train" in Path(x).stem]
         data["val"] = [(x, y) for x, y in image_mask_paths if "val" in Path(x).stem]
         data["test"] = [(x, y) for x, y in image_mask_paths if "test" in Path(x).stem]
+    elif data_split_type == DataSplitType.CSV:
+        (x,y) = image_mask_paths[0]
+        # x -> Image path
+        img_parent = os.path.dirname(x)
+        # mask_parent = os.path.dirname(y)
+        split_type = ["train","val","test"]
+
+        for split in split_type:
+            csv_path_img = os.path.join(img_parent, f"{split}.csv")
+            included_paths = read_paths_csv(csv_path_img)
+            included_paths_stems = get_file_stem(included_paths)
+            
+            data[split] = list(zip(included_paths_stems,included_paths_stems))
+
+        # (x,y ) for x,y in image_mask_paths 
     else:
         raise NotImplementedError(f"{data_split_type = }")
 

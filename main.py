@@ -122,7 +122,8 @@ def get_args():
 
     args = parser.parse_args()
     # convert to enum
-    args.directory_type = DatasetType[args.directory_type]
+    args.directory_type = DatasetType.CSV
+    # args.directory_type = DatasetType[args.directory_type]
     args.pretrain_type = PretrainType[args.pretrain_type]
     args.backbone_type = builder.BackboneType[args.backbone_type]
     args.mapping_type = builder.MappingType[args.mapping_type]

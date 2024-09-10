@@ -34,7 +34,7 @@ def get_args():
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
-    parser.add_argument("--data_split_type", type=str, choices=[x.name for x in DataSplitType], default=DataSplitType.FILENAME.name)
+    parser.add_argument("--data_split_type", type=str, choices=[x.name for x in DataSplitType], default=DataSplitType.CSV.name)
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
