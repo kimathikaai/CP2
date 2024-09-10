@@ -483,6 +483,7 @@ def main_worker(rank, args):
                         "pretrain_type": args.pretrain_type.name,
                         "backbone_type": args.backbone_type.name,
                     },
+                    epoch=epoch,
                     is_best=False,
                     filename=os.path.join(
                         args.log_dir,
@@ -577,8 +578,9 @@ def train(
     return step
 
 
-def save_checkpoint(state, is_best, filename="checkpoint.ckpt"):
+def save_checkpoint(state, is_best, epoch, filename="checkpoint.ckpt",):
     torch.save(state, filename)
+    torch.save(state, f"{epoch}_{filename}")
     if is_best:
         shutil.copyfile(filename, "best_checkpoint.pth")
 
