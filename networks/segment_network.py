@@ -103,7 +103,9 @@ class SegmentationModule(L.LightningModule):
         self.num_classes = num_classes
         self.image_shape = image_shape
 
-        self.loss = nn.CrossEntropyLoss()
+        # RuntimeError: nll_loss2d_forward_out_cuda_template does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True)' 
+        # https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
+        self.loss = nn.CrossEntropyLoss(reduction='none')
 
         #
         # Metrics
@@ -170,6 +172,8 @@ class SegmentationModule(L.LightningModule):
         logits, argmax_logits = self.forward(images)
         # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, masks)
+        # For reproducability
+        loss = loss.mean()
 
         # update logs
         self.log(
