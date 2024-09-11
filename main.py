@@ -556,8 +556,6 @@ def train(
             loss = model(
                 img_a=img_a,
                 img_b=img_b,
-                ids_a=ids_a,
-                ids_b=ids_b,
                 bg0=bg0,
                 bg1=bg1,
                 visualize=visualize,
