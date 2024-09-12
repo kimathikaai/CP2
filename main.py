@@ -5,6 +5,7 @@ import os
 import random
 import shutil
 import subprocess
+import time
 from collections.abc import Mapping
 
 import albumentations as A
@@ -464,7 +465,7 @@ def main_worker(rank, args):
         logger.info(f"Beginning {epoch = }")
 
         if rank == 0:
-            wandb.log({"epoch": epoch})
+            wandb.log({"epoch": epoch, 'update-step': step})
             wandb.log({"learning_rate": lr})
 
         # train for one epoch
@@ -476,6 +477,7 @@ def main_worker(rank, args):
             args,
             step,
             logger,
+            rank,
         )
         if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
@@ -499,21 +501,28 @@ def main_worker(rank, args):
     cleanup()
 
 
-def train(
-    train_loader_list,
-    model,
-    optimizer,
-    epoch,
-    args,
-    step,
-    logger,
-):
+def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
     train_loader, train_loader_bg0, train_loader_bg1 = train_loader_list
+
+    batch_time = builder.AverageMeter("Time", ":6.3f")
+    # data_time = AverageMeter('Data', ':6.3f')
+    loss = builder.AverageMeter("Loss", ":.4f")
+    progress = ProgressMeter(
+        len(train_loader),
+        [batch_time, loss],
+        logger,
+        prefix="Epoch: [{}]".format(epoch),
+    )
+
     model.train()
+    end = time.time()
 
     for i, (images, bg0, bg1) in enumerate(
         zip(train_loader, train_loader_bg0, train_loader_bg1)
     ):
+        if rank == 0:
+            wandb.log({"update-step": step})
+
         # data_time.update(time.time() - end)
         idx_a = 0
         idx_b = idx_a if args.same_foreground else 1
@@ -567,12 +576,20 @@ def train(
                 step=step,
                 new_epoch=new_epoch,
             )
-        logger.info(f"{epoch = }, {step = }, {loss.item() = }")
+        # logger.info(f"{epoch = }, {step = }, {loss.item() = }")
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # logging
+        loss.update(loss.item(), img_a.size(0))
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        if i % args.print_freq == 0:
+            progress.display(i)
 
         step += 1
 
@@ -604,8 +621,8 @@ class ProgressMeter(object):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
         self.logger.info("    ".join(entries))
-        if torch.distributed.get_rank() == 0:
-            self.logger.info("\t".join(entries))
+        # if torch.distributed.get_rank() == 0:
+        #     self.logger.info("\t".join(entries))
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
