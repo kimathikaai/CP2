@@ -43,7 +43,7 @@ do
                 --batch_size 16 \
                 --img_height 352 \
                 --img_width 352 \
-                --epochs 100
+                --epochs 3
         done
     done
 done
