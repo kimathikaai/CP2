@@ -20,7 +20,7 @@ for dir in CVC-ClinicDB
 do
     for ratio in 1
     do
-        for seed in 0 1 2
+        for seed in 0 0 1 1
         do
             run_id="$(date +"%y%m%d%H%M%S")-${dir}-${pretrain_type}-R${ratio}-S${seed}-POLYP"
             current_dir=${data_dir}/${dir}
