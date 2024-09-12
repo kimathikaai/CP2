@@ -1,11 +1,11 @@
 import argparse
-from collections.abc import Mapping
 import logging
 import math
 import os
 import random
 import shutil
 import subprocess
+from collections.abc import Mapping
 
 import albumentations as A
 import numpy as np
@@ -134,7 +134,6 @@ def get_args():
     #     args.lmbd_pixel_corr_weight = 10
     #     args.lmbd_region_corr_weight = 1
     #     args.pixel_ids_stride = 1
-
 
     return args
 
@@ -365,7 +364,9 @@ def main_worker(rank, args):
         if args.pretrain_type == PretrainType.CP2
         or args.pretrain_type == PretrainType.PROPOSED
         else 0.996,
-        K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
+        K=min(len_dataset, DEFAULT_QUEUE_SIZE)
+        if args.cap_queue
+        else DEFAULT_QUEUE_SIZE,
         dim=128
         if args.pretrain_type == PretrainType.CP2
         or args.pretrain_type == PretrainType.PROPOSED
@@ -455,7 +456,11 @@ def main_worker(rank, args):
         train_sampler.set_epoch(epoch)
         train_sampler_bg0.set_epoch(epoch)
         train_sampler_bg1.set_epoch(epoch)
-        lr = args.lr if args.remove_lr_scheduler else adjust_learning_rate(optimizer, epoch, args)
+        lr = (
+            args.lr
+            if args.remove_lr_scheduler
+            else adjust_learning_rate(optimizer, epoch, args)
+        )
         logger.info(f"Beginning {epoch = }")
 
         if rank == 0:
@@ -576,7 +581,12 @@ def train(
     return step
 
 
-def save_checkpoint(state, is_best, epoch, filename="checkpoint.ckpt",):
+def save_checkpoint(
+    state,
+    is_best,
+    epoch,
+    filename="checkpoint.ckpt",
+):
     torch.save(state, filename)
     torch.save(state, f"{epoch}_{filename}")
     if is_best:
