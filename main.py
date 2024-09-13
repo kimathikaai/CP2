@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Mapping
+from pathlib import Path
 
 import albumentations as A
 import numpy as np
@@ -500,7 +501,7 @@ def main_worker(rank, args):
                     filename=os.path.join(
                         args.log_dir,
                         args.run_id,
-                        f"{step}_checkpoint.ckpt",
+                        f"{step}_{epoch}_checkpoint.ckpt",
                     ),
                 )
         if step > args.max_steps:
@@ -616,7 +617,8 @@ def save_checkpoint(
 ):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, "checkpoint.ckpt")
+        copy_file = os.path.join(Path(filename).parent, "checkpoint.ckpt")
+        shutil.copyfile(filename, copy_file)
 
 
 class ProgressMeter(object):
