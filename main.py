@@ -41,6 +41,8 @@ def get_args():
     parser.add_argument("--run_id", required=True, type=str, help='Unique identifier for a run')
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
+    parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
+
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
@@ -321,6 +323,7 @@ def main_worker(rank, args):
             entity=args.wandb_team,
             dir=args.log_dir,
             tags=tags,
+            mode= 'offline' if args.offline_wandb else 'online'
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
