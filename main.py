@@ -323,7 +323,7 @@ def main_worker(rank, args):
             entity=args.wandb_team,
             dir=args.log_dir,
             tags=tags,
-            mode= 'offline' if args.offline_wandb else 'online'
+            mode="offline" if args.offline_wandb else "online",
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
