@@ -509,10 +509,10 @@ def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
 
     batch_time = builder.AverageMeter("Time", ":6.3f")
     # data_time = AverageMeter('Data', ':6.3f')
-    loss = builder.AverageMeter("Loss", ":.4f")
+    loss_log = builder.AverageMeter("Loss", ":.4f")
     progress = ProgressMeter(
         len(train_loader),
-        [batch_time, loss],
+        [batch_time, loss_log],
         logger,
         prefix="Epoch: [{}]".format(epoch),
     )
@@ -590,7 +590,7 @@ def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
         optimizer.step()
 
         # logging
-        loss.update(loss.item(), img_a.size(0))
+        loss_log.update(loss.item(), img_a.size(0))
         batch_time.update(time.time() - end)
         end = time.time()
 
