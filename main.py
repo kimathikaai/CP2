@@ -87,7 +87,7 @@ def get_args():
 
     parser.add_argument('--epochs', default=200, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('--max_steps', default=None, type=int)
+    parser.add_argument('--max_steps', default=np.inf, type=int)
     parser.add_argument('--num-images', default=1281167, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
