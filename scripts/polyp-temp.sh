@@ -14,7 +14,7 @@ python -m unittest discover -s tests  -v
 tags="$(date +%m-%d-%H%M%S)-reproducability"
 
 
-pretrain_type='NONE'
+pretrain_type='CP2'
 #
 # PRE-TRAINING
 #
