@@ -87,6 +87,7 @@ def get_args():
 
     parser.add_argument('--epochs', default=200, type=int, metavar='N',
                         help='number of total epochs to run')
+    parser.add_argument('--max_steps', default=None, type=int)
     parser.add_argument('--num-images', default=1281167, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
@@ -465,7 +466,7 @@ def main_worker(rank, args):
         logger.info(f"Beginning {epoch = }")
 
         if rank == 0:
-            wandb.log({"epoch": epoch, 'update-step': step})
+            wandb.log({"epoch": epoch, "update-step": step})
             wandb.log({"learning_rate": lr})
 
         # train for one epoch
@@ -479,7 +480,7 @@ def main_worker(rank, args):
             logger,
             rank,
         )
-        if epoch % args.ckpt_freq == args.ckpt_freq - 1:
+        if epoch % args.ckpt_freq == args.ckpt_freq - 1 or step > args.max_steps:
             if rank == 0:
                 save_checkpoint(
                     {
@@ -498,6 +499,8 @@ def main_worker(rank, args):
                         "checkpoint.ckpt",
                     ),
                 )
+        if step > args.max_steps:
+            break
     cleanup()
 
 
@@ -520,6 +523,9 @@ def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
     for i, (images, bg0, bg1) in enumerate(
         zip(train_loader, train_loader_bg0, train_loader_bg1)
     ):
+        if step > args.max_steps:
+            return step
+
         if rank == 0:
             wandb.log({"update-step": step})
 
