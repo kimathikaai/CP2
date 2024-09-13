@@ -308,7 +308,6 @@ def main_worker(rank, args):
     # setting cudnn.benchmark as True will have no effect
     cudnn.deterministic = True
     cudnn.benchmark = False
-    torch.use_deterministic_algorithms(True)
 
     # get configuration file
     cfg = Config.fromfile(args.config)
