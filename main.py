@@ -492,11 +492,11 @@ def main_worker(rank, args):
                         "backbone_type": args.backbone_type.name,
                     },
                     epoch=epoch,
-                    is_best=False,
+                    is_best=True,
                     filename=os.path.join(
                         args.log_dir,
                         args.run_id,
-                        "checkpoint.ckpt",
+                        f"{step}_checkpoint.ckpt",
                     ),
                 )
         if step > args.max_steps:
@@ -611,9 +611,8 @@ def save_checkpoint(
     filename="checkpoint.ckpt",
 ):
     torch.save(state, filename)
-    torch.save(state, f"{epoch}_{filename}")
     if is_best:
-        shutil.copyfile(filename, "best_checkpoint.pth")
+        shutil.copyfile(filename, "checkpoint.ckpt")
 
 
 class ProgressMeter(object):
