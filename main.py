@@ -318,7 +318,7 @@ def main_worker(rank, args):
             name=args.run_id,
             project=args.wandb_project,
             entity=args.wandb_team,
-            dir=args.run_log_dir,
+            dir=args.log_dir,
             tags=tags,
         )
         # Add hyperparameters to config
