@@ -3,6 +3,7 @@ base_dir_0='/mnt/pub0'
 base_dir_1='/mnt/pub1'
 log_dir="${base_dir_1}/ssl-pretraining/logs"
 data_dir="${base_dir_1}/ssl-pretraining/data"
+pretrain_dir='/mnt/pub1/ssl-pretraining/data/hyper-kvasir/unlabeled-images/images'
 
 # Hyper-parameter
 num_gpus=1
