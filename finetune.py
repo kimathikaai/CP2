@@ -182,7 +182,7 @@ def main(args):
         entity=args.wandb_team,
         tags=tags,
         name=args.run_id,
-        save_dir=args.run_dir,
+        save_dir=args.log_dir,
     )
 
     #
