@@ -29,6 +29,8 @@ def get_args():
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
+    parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
+
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
@@ -183,6 +185,7 @@ def main(args):
         tags=tags,
         name=args.run_id,
         save_dir=args.log_dir,
+        mode="offline" if args.offline_wandb else "online",
     )
 
     #
@@ -196,8 +199,7 @@ def main(args):
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
     else:
         # Using empty string to denote no path
-        assert args.pretrain_path == '', f"{args.pretrain_path = }"
-
+        assert args.pretrain_path == "", f"{args.pretrain_path = }"
 
     cfg.model.decode_head.num_classes = args.num_classes
     model = SegmentationModule(
