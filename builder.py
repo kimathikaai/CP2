@@ -158,6 +158,7 @@ class CP2_MOCO(nn.Module):
         lmbd_region_corr_weight=1,
         lmbd_not_corr_weight=1,
         negative_type=NegativeType.NONE,
+        negative_scale=2,
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
         mapping_type=MappingType.CP2,
@@ -205,6 +206,7 @@ class CP2_MOCO(nn.Module):
 
         assert negative_type in NegativeType
         self.negative_type = negative_type
+        self.negative_scale = negative_scale
 
         assert backbone_type in BackboneType
         self.backbone_type = backbone_type
@@ -672,7 +674,7 @@ class CP2_MOCO(nn.Module):
         if self.negative_type == NegativeType.FIXED:
             negative_scores = torch.where(~(_labels_dense.bool()))
             _logits_dense[negative_scores] = (
-                2 / (1 + torch.exp(_logits_dense[negative_scores] * -2)) - 1
+                2 / (1 + torch.exp(_logits_dense[negative_scores] * -self.negative_scale)) - 1
             )
         # Shift the center based on the average score
         elif self.negative_type == NegativeType.AVERAGE:
@@ -682,7 +684,7 @@ class CP2_MOCO(nn.Module):
                 / (
                     1
                     + torch.exp(
-                        (_logits_dense - negative_scores_average.detach().reshape(-1,1,1))[negative_scores] * -2
+                        (_logits_dense - negative_scores_average.detach().reshape(-1,1,1))[negative_scores] * -self.negative_scale
                     )
                 )
                 - 1
