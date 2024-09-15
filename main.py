@@ -58,6 +58,7 @@ def get_args():
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
     parser.add_argument("--mapping_type", type=str, choices=[x.name for x in builder.MappingType], default=builder.MappingType.CP2.name)
     parser.add_argument("--negative_type", type=str, choices=[x.name for x in builder.NegativeType], default=builder.NegativeType.NONE.name)
+    parser.add_argument("--negative_scale", type=float, default=2)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
@@ -384,6 +385,7 @@ def main_worker(rank, args):
         backbone_type=args.backbone_type,
         mapping_type=args.mapping_type,
         negative_type=args.negative_type,
+        negative_scale=args.negative_scale,
         lmbd_pixel_corr_weight=args.lmbd_pixel_corr_weight,
         lmbd_region_corr_weight=args.lmbd_pixel_corr_weight,
         lmbd_not_corr_weight=args.lmbd_not_corr_weight,
