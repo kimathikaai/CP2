@@ -231,15 +231,7 @@ class SegmentationModule(L.LightningModule):
     def shared_step(self, batch, stage: Stage):
         images, masks = batch
         
-        # valid_mask = masks != 255
-        # masks = masks[valid_mask]
-        # unique_labels = torch.unique(masks)
-
-        # print(f"Unique labels in masks: {unique_labels}")
-        # Ensure all labels in masks are within the range [0, num_classes - 1] or equal to ignore_index (255)
         
-        # assert torch.all((masks < self.num_classes) | (masks == 255)), "Labels in masks out of range."
-
         # Remap masks to trainId values
         masks_np = masks.cpu().numpy()
         remapped_masks_np = np.full_like(masks_np, 255)
@@ -252,18 +244,6 @@ class SegmentationModule(L.LightningModule):
         # Convert back to Torch tensor
         remapped_masks = torch.from_numpy(remapped_masks_np).to(masks.device)
 
-
-        # unique_labels = torch.unique(remapped_masks)
-
-        # print(f"Unique labels in masks: {unique_labels}")
-        # remapped_masks_np = id_to_trainId[masks_np]
-
-        # Convert back to Torch tensor
-        # remapped_masks = torch.from_numpy(remapped_masks_np).to(masks.device)
-
-        # assert torch.all((remapped_masks < self.num_classes)), "Labels in masks out of range."
-
-
         logits, argmax_logits = self.forward(images)
         # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, remapped_masks)
@@ -274,10 +254,6 @@ class SegmentationModule(L.LightningModule):
         masks_filtered = remapped_masks[valid_mask]
         argmax_logits_filtered = argmax_logits[valid_mask]
 
-
-        # print(f"logits shape: {logits.shape}")
-        # print(f"masks shape: {masks.shape}")
-        # update logs
         self.log(
             f"{stage.name.lower()}_loss",
             loss,
