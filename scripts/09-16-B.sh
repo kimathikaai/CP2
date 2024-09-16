@@ -17,6 +17,7 @@ tags="$(date +%m-%d-%H%M%S)"
 #
 # PixPro
 #
+pretrain_type=PIXPRO
 for pretrain_run_id in '240916185700-PixPro'
 do
     for dir in Kvasir-SEG CVC-ClinicDB CVC-ColonDB ETIS-LaribPolypDB
