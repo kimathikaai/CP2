@@ -10,6 +10,11 @@ from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
 
 BACKGROUND_CLASS = 0
 
+import numpy as np
+from labels import Label,labels
+id_to_trainId = np.full((34,), 255, dtype=np.uint8)  # Set default to 255 (ignore label)
+for label in labels:
+    id_to_trainId[label.id] = label.trainId
 
 class PretrainType(Enum):
     """
@@ -24,6 +29,10 @@ class PretrainType(Enum):
     MOCO = 5
     PROPOSED = 6
     PIXPRO = 7
+    DENSECL = 8
+    DINO = 9
+    BARLOWTWINS = 10
+    VICEREGL = 11
 
 
 class Stage(Enum):
@@ -56,19 +65,34 @@ class SegmentationModule(L.LightningModule):
         elif pretrain_type == PretrainType.RANDOM:
             pass
         elif pretrain_type in [
-            PretrainType.CP2,
+            # PretrainType.CP2,
             PretrainType.MOCO,
             PretrainType.BYOL,
             PretrainType.PROPOSED,
         ]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
-            assert (
-                checkpoint["pretrain_type"] == pretrain_type.name
-            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
                 x.replace("module.encoder_q.", ""): y
-                for x, y in checkpoint["state_dict"].items()
+                for x, y in checkpoint.items()
+                if "encoder_q" in x
+            }
+            # Remove the conv_seg weights for now (mismatch in num_classes)
+            state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
+            print(self.model.load_state_dict(state_dict, strict=False))
+
+        elif pretrain_type == PretrainType.CP2:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            state_dict = {
+                x.replace("module.encoder_q.", ""): y
+                for x, y in checkpoint.items()
                 if "encoder_q" in x
             }
             # Remove the conv_seg weights for now (mismatch in num_classes)
@@ -85,16 +109,53 @@ class SegmentationModule(L.LightningModule):
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             # Check that the weights match the type
-            assert (
-                checkpoint["pretrain_type"] == pretrain_type.name
-            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
                 x.replace("module.encoder.", ""): y
                 for x, y in checkpoint["model"].items()
                 if "module.encoder." in x
             }
+            
             print(self.model.backbone.load_state_dict(state_dict, strict=True))
+        elif pretrain_type == PretrainType.DENSECL:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            state_dict = checkpoint["state_dict"]
+            
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
 
+            print(self.model.load_state_dict(state_dict, strict=False))
+            
+        elif pretrain_type == PretrainType.DINO:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+        
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+
+            print(self.model.load_state_dict(checkpoint, strict=False))
+        elif pretrain_type == PretrainType.BARLOWTWINS:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+
+            print(self.model.load_state_dict(checkpoint, strict=False))
+        elif pretrain_type == PretrainType.VICEREGL:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+
+            print(self.model.load_state_dict(checkpoint, strict=False))
         else:
             raise NotImplementedError(f"{pretrain_type = }")
 
@@ -105,7 +166,7 @@ class SegmentationModule(L.LightningModule):
 
         # RuntimeError: nll_loss2d_forward_out_cuda_template does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True)' 
         # https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
-        self.loss = nn.CrossEntropyLoss(reduction='none')
+        self.loss = nn.CrossEntropyLoss(ignore_index = 255, reduction='none')
 
         #
         # Metrics
@@ -169,12 +230,53 @@ class SegmentationModule(L.LightningModule):
 
     def shared_step(self, batch, stage: Stage):
         images, masks = batch
+        
+        # valid_mask = masks != 255
+        # masks = masks[valid_mask]
+        # unique_labels = torch.unique(masks)
+
+        # print(f"Unique labels in masks: {unique_labels}")
+        # Ensure all labels in masks are within the range [0, num_classes - 1] or equal to ignore_index (255)
+        
+        # assert torch.all((masks < self.num_classes) | (masks == 255)), "Labels in masks out of range."
+
+        # Remap masks to trainId values
+        masks_np = masks.cpu().numpy()
+        remapped_masks_np = np.full_like(masks_np, 255)
+        
+
+        # Only remap where masks are not 255
+        valid_mask = masks_np != 255
+        remapped_masks_np[valid_mask] = id_to_trainId[masks_np[valid_mask]]
+
+        # Convert back to Torch tensor
+        remapped_masks = torch.from_numpy(remapped_masks_np).to(masks.device)
+
+
+        # unique_labels = torch.unique(remapped_masks)
+
+        # print(f"Unique labels in masks: {unique_labels}")
+        # remapped_masks_np = id_to_trainId[masks_np]
+
+        # Convert back to Torch tensor
+        # remapped_masks = torch.from_numpy(remapped_masks_np).to(masks.device)
+
+        # assert torch.all((remapped_masks < self.num_classes)), "Labels in masks out of range."
+
+
         logits, argmax_logits = self.forward(images)
         # argmax_logits.shape = BxCxHxW
-        loss = self.loss(logits, masks)
+        loss = self.loss(logits, remapped_masks)
         # For reproducability
         loss = loss.mean()
 
+        valid_mask = remapped_masks != 255
+        masks_filtered = remapped_masks[valid_mask]
+        argmax_logits_filtered = argmax_logits[valid_mask]
+
+
+        # print(f"logits shape: {logits.shape}")
+        # print(f"masks shape: {masks.shape}")
         # update logs
         self.log(
             f"{stage.name.lower()}_loss",
@@ -185,14 +287,14 @@ class SegmentationModule(L.LightningModule):
             add_dataloader_idx=False,
         )
         if stage == Stage.TRAIN:
-            self.train_metrics.update(argmax_logits, masks)
+            self.train_metrics.update(argmax_logits_filtered, masks_filtered)
             self.log_dict(
                 {k: v for k, v in self.train_metrics.items()},
                 on_epoch=True,
                 on_step=True,
             )
         elif stage == Stage.VAL:
-            self.val_metrics.update(argmax_logits, masks)
+            self.val_metrics.update(argmax_logits_filtered, masks_filtered)
             self.log_dict(
                 {k: v for k, v in self.val_metrics.items()},
                 on_epoch=True,
@@ -200,7 +302,7 @@ class SegmentationModule(L.LightningModule):
                 add_dataloader_idx=False,
             )
         elif stage == Stage.PSEUDOTEST:
-            self.pseudo_test_metrics.update(argmax_logits, masks)
+            self.pseudo_test_metrics.update(argmax_logits_filtered, masks_filtered)
             self.log_dict(
                 {k: v for k, v in self.pseudo_test_metrics.items()},
                 on_epoch=True,
@@ -208,7 +310,7 @@ class SegmentationModule(L.LightningModule):
                 add_dataloader_idx=False,
             )
         elif stage == Stage.TEST:
-            self.test_metrics.update(argmax_logits, masks)
+            self.test_metrics.update(argmax_logits_filtered, masks_filtered)
             self.log_dict(
                 {k: v for k, v in self.test_metrics.items()},
                 on_epoch=True,

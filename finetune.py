@@ -224,7 +224,7 @@ def main(args):
         accelerator="gpu",
         devices=args.num_gpus,
         sync_batchnorm=args.num_gpus > 1,
-        precision=32,
+        precision=16,
         max_epochs=args.epochs,
         logger=wandb_logger,
         profiler="simple" if args.use_profiler else None,
