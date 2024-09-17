@@ -33,6 +33,7 @@ class PretrainType(Enum):
     BYOL_IMGNET = 14
     CP2_IMGNET = 15
     MOSREP_IMGNET = 16
+    CLOVE_IMGNET = 17
 
 
 class Stage(Enum):
@@ -105,7 +106,7 @@ class SegmentationModule(L.LightningModule):
                 if "module.encoder." in x
             }
             print(self.model.backbone.load_state_dict(state_dict, strict=True))
-        elif pretrain_type == PretrainType.PIXPRO_IMGNET:
+        elif pretrain_type in [PretrainType.PIXPRO_IMGNET, PretrainType.CLOVE_IMGNET]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             # Check that the weights match the type
@@ -128,14 +129,14 @@ class SegmentationModule(L.LightningModule):
             #     checkpoint["pretrain_type"] == pretrain_type.name
             # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
 
-            print(self.model.load_state_dict(state_dict, strict=False))
+            print(self.model.backbone.load_state_dict(state_dict, strict=False))
 
         elif pretrain_type in [
             PretrainType.BYOL_IMGNET,
             PretrainType.CP2_IMGNET,
             PretrainType.VICEREGL_IMGNET,
             PretrainType.BARLOWTWINS_IMGNET,
-            PretrainType.DINO_IMGNET
+            PretrainType.DINO_IMGNET,
         ]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
