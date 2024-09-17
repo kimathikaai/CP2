@@ -121,6 +121,7 @@ do
         --foreground_max 0.8 \
         --backbone_type 'DEEPLABV3' \
         --offline_wandb \
+        --ckpt-freq 5 \
         --cap_queue
 
     #
