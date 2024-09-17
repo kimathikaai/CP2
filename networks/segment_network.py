@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from mmseg.models import build_segmentor
 from mmseg.models.utils import resize
+from torch._dynamo.skipfiles import check
 from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
                           MetricCollection, Precision, Recall)
 
@@ -17,13 +18,11 @@ class PretrainType(Enum):
     """
 
     RANDOM = 0
-    NONE = 1
+    IMAGENET = 1
     CP2 = 2
     MIRROR = 3
     BYOL = 4
     MOCO = 5
-    PROPOSED = 6
-    PIXPRO = 7
 
 
 class Stage(Enum):
@@ -49,27 +48,21 @@ class SegmentationModule(L.LightningModule):
         # Initialize the model
         self.model = build_segmentor(model_config.model)
         assert pretrain_type in PretrainType
-        if pretrain_type == PretrainType.NONE:
-            # ImageNet initialization
+        if pretrain_type == PretrainType.IMAGENET:
             self.model.backbone.init_cfg.checkpoint = "torchvision://resnet50"
             self.model.backbone.init_weights()
         elif pretrain_type == PretrainType.RANDOM:
             pass
-        elif pretrain_type in [
-            PretrainType.CP2,
-            PretrainType.MOCO,
-            PretrainType.BYOL,
-            PretrainType.PROPOSED,
-        ]:
+        elif pretrain_type in [PretrainType.CP2, PretrainType.MOCO, PretrainType.BYOL]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             assert (
                 checkpoint["pretrain_type"] == pretrain_type.name
             ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
-                x.replace("module.encoder_q.", ""): y
+                x.replace("module.encoder_k.", ""): y
                 for x, y in checkpoint["state_dict"].items()
-                if "encoder_q" in x
+                if "encoder_k" in x
             }
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
@@ -81,20 +74,6 @@ class SegmentationModule(L.LightningModule):
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             print(self.load_state_dict(state_dict, strict=False))
-        elif pretrain_type == PretrainType.PIXPRO:
-            checkpoint_path = self.model.backbone.init_cfg.checkpoint
-            checkpoint = torch.load(checkpoint_path)
-            # Check that the weights match the type
-            assert (
-                checkpoint["pretrain_type"] == pretrain_type.name
-            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
-            state_dict = {
-                x.replace("module.encoder.", ""): y
-                for x, y in checkpoint["model"].items()
-                if "module.encoder." in x
-            }
-            print(self.model.backbone.load_state_dict(state_dict, strict=True))
-
         else:
             raise NotImplementedError(f"{pretrain_type = }")
 
@@ -103,9 +82,7 @@ class SegmentationModule(L.LightningModule):
         self.num_classes = num_classes
         self.image_shape = image_shape
 
-        # RuntimeError: nll_loss2d_forward_out_cuda_template does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True)' 
-        # https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
-        self.loss = nn.CrossEntropyLoss(reduction='none')
+        self.loss = nn.CrossEntropyLoss()
 
         #
         # Metrics
@@ -172,8 +149,6 @@ class SegmentationModule(L.LightningModule):
         logits, argmax_logits = self.forward(images)
         # argmax_logits.shape = BxCxHxW
         loss = self.loss(logits, masks)
-        # For reproducability
-        loss = loss.mean()
 
         # update logs
         self.log(

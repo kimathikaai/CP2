@@ -65,26 +65,20 @@ class A_TwoCropsTransform:
 
     def get_pixel_ids(self, height, width, path):
         pixel_ids = np.arange(start=1, stop=height * width + 1).reshape((height, width))
+
+        # Get the SAM generated pixel id map
+        if self.mapping_type == MappingType.PIXEL_REGION:
+            mask_name = Path(path).stem + MASK_EXT
+            mask_path = os.path.join(Path(path).parents[1], MASK_DIR, mask_name)
+            pixel_ids = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
         # change the pixel id resolution
         pixel_ids = rescale_ids(pixel_ids, self.pixel_ids_stride)
         pixel_ids = cv2.resize(
             pixel_ids, dsize=(width, height), interpolation=cv2.INTER_NEAREST_EXACT
         )
 
-        # Get the SAM generated pixel id map
-        if self.mapping_type in [MappingType.REGION_ID, MappingType.PIXEL_REGION_ID]:
-            mask_name = Path(path).stem + MASK_EXT
-            mask_path = os.path.join(Path(path).parents[1], MASK_DIR, mask_name)
-            region_ids = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-            # change the pixel id resolution
-            region_ids = rescale_ids(region_ids, self.pixel_ids_stride)
-            region_ids = cv2.resize(
-                region_ids, dsize=(width, height), interpolation=cv2.INTER_NEAREST_EXACT
-            )
-        else:
-            region_ids = pixel_ids
-
-        return pixel_ids, region_ids
+        return pixel_ids
 
     def __call__(self, x, path):
         #
@@ -95,27 +89,22 @@ class A_TwoCropsTransform:
         # print(f"{sample.shape = }")
         h, w, c = sample.shape
         # Get an array of ids
-        pixel_ids, region_ids = self.get_pixel_ids(h, w, path)
+        pixel_ids = self.get_pixel_ids(h, w, path)
+
         #
         # Get the query and key images
         #
-        aug_q = self.base_transform(
-            image=sample, mask=pixel_ids, region_ids=region_ids
-        )
+        aug_q = self.base_transform(image=sample, mask=pixel_ids)
         q = aug_q["image"]
         q = self.to_tensor(np.array(q))
-        q_pixel_ids = torch.from_numpy(aug_q["mask"])
-        q_region_ids = torch.from_numpy(aug_q["region_ids"])
+        q_ids = torch.from_numpy(aug_q["mask"])
 
-        aug_k = self.base_transform(
-            image=sample, mask=pixel_ids, region_ids=region_ids
-        )
+        aug_k = self.base_transform(image=sample, mask=pixel_ids)
         k = aug_k["image"]
         k = self.to_tensor(np.array(k))
-        k_pixel_ids = torch.from_numpy(aug_k["mask"])
-        k_region_ids = torch.from_numpy(aug_k["region_ids"])
+        k_ids = torch.from_numpy(aug_k["mask"])
 
-        return (q, q_pixel_ids, q_region_ids), (k, k_pixel_ids, k_region_ids)
+        return (q, q_ids), (k, k_ids)
 
 
 class GaussianBlur(object):

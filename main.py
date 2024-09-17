@@ -5,9 +5,6 @@ import os
 import random
 import shutil
 import subprocess
-import time
-from collections.abc import Mapping
-from pathlib import Path
 
 import albumentations as A
 import numpy as np
@@ -40,9 +37,6 @@ def get_args():
 
     parser.add_argument('--config', help='path to configuration file')
     parser.add_argument("--run_id", required=True, type=str, help='Unique identifier for a run')
-    parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
-
-    parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
 
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
@@ -52,26 +46,20 @@ def get_args():
     # Data
     parser.add_argument("--data_dirs", metavar='DIR', nargs='+', help='Folder(s) containing image data', required=True)
     parser.add_argument("--directory_type", type=str, choices=[x.name for x in DatasetType], default=DatasetType.FILENAME.name)
-
-    # Method
     parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
-    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
     parser.add_argument("--mapping_type", type=str, choices=[x.name for x in builder.MappingType], default=builder.MappingType.CP2.name)
-    parser.add_argument("--negative_type", type=str, choices=[x.name for x in builder.NegativeType], default=builder.NegativeType.NONE.name)
-    parser.add_argument("--negative_scale", type=float, default=2)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
     # Custom experimental hyper-parameters
     parser.add_argument('--lmbd_cp2_dense_loss', default=0.2, type=float)
-    parser.add_argument('--lmbd_region_corr_weight', default=1, type=float)
-    parser.add_argument('--lmbd_pixel_corr_weight', default=1, type=float)
-    parser.add_argument('--lmbd_not_corr_weight', default=1, type=float)
+    parser.add_argument('--lmbd_corr_weight', default=1, type=float)
     parser.add_argument('--pixel_ids_stride', default=1, type=int)
     parser.add_argument('--unet_truncated_dec_blocks', default=2, type=int)
     parser.add_argument('--same_foreground', action='store_true', help='Use the same foreground images for both bacgrounds')
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
+    parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
 
     parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
 
@@ -91,7 +79,6 @@ def get_args():
 
     parser.add_argument('--epochs', default=200, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('--max_steps', default=np.inf, type=int)
     parser.add_argument('--num-images', default=1281167, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
@@ -100,7 +87,6 @@ def get_args():
                         metavar='N', help='total batch size over all GPUs')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
                         metavar='LR', help='initial learning rate', dest='lr')
-    parser.add_argument('--remove_lr_scheduler', action='store_true', help='Stop using the lr scheduler')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                         help='momentum of SGD solver')
     parser.add_argument('--optim', default='sgd', help='optimizer')
@@ -126,20 +112,12 @@ def get_args():
     args.pretrain_type = PretrainType[args.pretrain_type]
     args.backbone_type = builder.BackboneType[args.backbone_type]
     args.mapping_type = builder.MappingType[args.mapping_type]
-    args.negative_type = builder.NegativeType[args.negative_type]
 
     # lemon data
     if args.lemon_data:
         args.directory_type = DatasetType.CSV
         args.img_height = 512
         args.img_width = 512
-
-    # if args.pretrain_type == PretrainType.PROPOSED:
-    #     args.mapping_type = builder.MappingType.PIXEL_REGION_ID
-    #     args.lmbd_not_corr_weight = 0
-    #     args.lmbd_pixel_corr_weight = 10
-    #     args.lmbd_region_corr_weight = 1
-    #     args.pixel_ids_stride = 1
 
     return args
 
@@ -216,8 +194,7 @@ def prepare_data(rank, num_workers, args):
                 A.ToGray(p=0.2),
                 loader.AGaussianBlur(p=0.5),
                 A.HorizontalFlip(),
-            ],
-            additional_targets={"region_ids": "mask"},
+            ]
         ),
         mapping_type=args.mapping_type,
         pixel_ids_stride=args.pixel_ids_stride,
@@ -311,21 +288,18 @@ def main_worker(rank, args):
     # Setting cudnn.deterministic as True will use the default algorithms, i.e.,
     # setting cudnn.benchmark as True will have no effect
     cudnn.deterministic = True
-    cudnn.benchmark = False
 
     # get configuration file
     cfg = Config.fromfile(args.config)
 
     # initialize wandb for the main process
     if rank == 0:
-        tags = ["pretrain"] + args.tags
         wandb.init(
             name=args.run_id,
             project=args.wandb_project,
             entity=args.wandb_team,
-            dir=args.log_dir,
-            tags=tags,
-            mode="offline" if args.offline_wandb else "online",
+            dir=args.run_log_dir,
+            tags=["pretrain"],
         )
         # Add hyperparameters to config
         wandb.config.update({"hyper-parameters": vars(args)})
@@ -334,11 +308,11 @@ def main_worker(rank, args):
             {"nvidia-smi": subprocess.check_output(["nvidia-smi"]).decode()}
         )
         # define our custom x axis metric
-        # wandb.define_metric("step")
-        # # define which metrics will be plotted against it (e.g. all metrics
-        # # under 'train')
-        # wandb.define_metric("train/*", step_metric="step")
-        # wandb.define_metric("learning_rate", step_metric="step")
+        wandb.define_metric("step")
+        # define which metrics will be plotted against it (e.g. all metrics
+        # under 'train')
+        wandb.define_metric("train/*", step_metric="step")
+        wandb.define_metric("learning_rate", step_metric="step")
 
     # setup process groups
     setup(rank, args)
@@ -368,27 +342,15 @@ def main_worker(rank, args):
     # instantiate the model(it's your own model) and move it to the right device
     model = builder.CP2_MOCO(
         cfg,
-        m=0.999
-        if args.pretrain_type == PretrainType.CP2
-        or args.pretrain_type == PretrainType.PROPOSED
-        else 0.996,
-        K=min(len_dataset, DEFAULT_QUEUE_SIZE)
-        if args.cap_queue
-        else DEFAULT_QUEUE_SIZE,
-        dim=128
-        if args.pretrain_type == PretrainType.CP2
-        or args.pretrain_type == PretrainType.PROPOSED
-        else 256,
+        m=0.999 if args.pretrain_type == PretrainType.CP2 else 0.996,
+        K=len_dataset if args.cap_queue else DEFAULT_QUEUE_SIZE,
+        dim=128 if args.pretrain_type == PretrainType.CP2 else 256,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
         backbone_type=args.backbone_type,
         mapping_type=args.mapping_type,
-        negative_type=args.negative_type,
-        negative_scale=args.negative_scale,
-        lmbd_pixel_corr_weight=args.lmbd_pixel_corr_weight,
-        lmbd_region_corr_weight=args.lmbd_pixel_corr_weight,
-        lmbd_not_corr_weight=args.lmbd_not_corr_weight,
+        lmbd_corr_weight=args.lmbd_corr_weight,
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         device=device,
         rank=rank,
@@ -465,15 +427,11 @@ def main_worker(rank, args):
         train_sampler.set_epoch(epoch)
         train_sampler_bg0.set_epoch(epoch)
         train_sampler_bg1.set_epoch(epoch)
-        lr = (
-            args.lr
-            if args.remove_lr_scheduler
-            else adjust_learning_rate(optimizer, epoch, args)
-        )
+        lr = adjust_learning_rate(optimizer, epoch, args)
         logger.info(f"Beginning {epoch = }")
 
         if rank == 0:
-            wandb.log({"epoch": epoch, "update-step": step})
+            wandb.log({"epoch": epoch})
             wandb.log({"learning_rate": lr})
 
         # train for one epoch
@@ -485,9 +443,8 @@ def main_worker(rank, args):
             args,
             step,
             logger,
-            rank,
         )
-        if epoch % args.ckpt_freq == args.ckpt_freq - 1 or step > args.max_steps:
+        if epoch % args.ckpt_freq == args.ckpt_freq - 1:
             if rank == 0:
                 save_checkpoint(
                     {
@@ -498,66 +455,41 @@ def main_worker(rank, args):
                         "pretrain_type": args.pretrain_type.name,
                         "backbone_type": args.backbone_type.name,
                     },
-                    epoch=epoch,
-                    is_best=True,
+                    is_best=False,
                     filename=os.path.join(
                         args.log_dir,
                         args.run_id,
-                        f"{step}_{epoch}_checkpoint.ckpt",
+                        "checkpoint.ckpt",
                     ),
                 )
-        if step > args.max_steps:
-            break
     cleanup()
 
 
-def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
+def train(
+    train_loader_list,
+    model,
+    optimizer,
+    epoch,
+    args,
+    step,
+    logger,
+):
     train_loader, train_loader_bg0, train_loader_bg1 = train_loader_list
-
-    batch_time = builder.AverageMeter("Time", ":6.3f")
-    # data_time = AverageMeter('Data', ':6.3f')
-    loss_log = builder.AverageMeter("Loss", ":.4f")
-    progress = ProgressMeter(
-        len(train_loader),
-        [batch_time, loss_log],
-        logger,
-        prefix="Epoch: [{}]".format(epoch),
-    )
-
     model.train()
-    end = time.time()
 
     for i, (images, bg0, bg1) in enumerate(
         zip(train_loader, train_loader_bg0, train_loader_bg1)
     ):
-        if step > args.max_steps:
-            return step
-
-        if rank == 0:
-            wandb.log({"update-step": step})
-
         # data_time.update(time.time() - end)
         idx_a = 0
         idx_b = idx_a if args.same_foreground else 1
         ids_a, ids_b = None, None
 
-        # Sample A
-        sample_a = images[idx_a]
-        img_a, pixel_ids_a, region_ids_a = sample_a
-        img_a, pixel_ids_a, region_ids_a = (
-            img_a.to(model.device),
-            pixel_ids_a.to(model.device),
-            region_ids_a.to(model.device),
-        )
+        img_a, ids_a = images[idx_a]
+        img_a, ids_a = img_a.to(model.device), ids_a.to(model.device)
 
-        # Sample B
-        sample_b = images[idx_b]
-        img_b, pixel_ids_b, region_ids_b = sample_b
-        img_b, pixel_ids_b, region_ids_b = (
-            img_b.to(model.device),
-            pixel_ids_b.to(model.device),
-            region_ids_b.to(model.device),
-        )
+        img_b, ids_b = images[idx_b]
+        img_b, ids_b = img_b.to(model.device), ids_b.to(model.device)
 
         # validate ids and images
         bg0 = bg0.to(model.device)
@@ -565,44 +497,23 @@ def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
 
         visualize = epoch == 0 and i == 0
         new_epoch = i == 0
-        if args.pretrain_type in [PretrainType.CP2, PretrainType.PROPOSED]:
-            loss = model(
-                img_a=img_a,
-                img_b=img_b,
-                pixel_ids_a=pixel_ids_a,
-                pixel_ids_b=pixel_ids_b,
-                region_ids_a=region_ids_a,
-                region_ids_b=region_ids_b,
-                bg0=bg0,
-                bg1=bg1,
-                visualize=visualize,
-                step=step,
-                new_epoch=new_epoch,
-            )
-        else:
-            loss = model(
-                img_a=img_a,
-                img_b=img_b,
-                bg0=bg0,
-                bg1=bg1,
-                visualize=visualize,
-                step=step,
-                new_epoch=new_epoch,
-            )
-        # logger.info(f"{epoch = }, {step = }, {loss.item() = }")
+        loss = model(
+            img_a=img_a,
+            img_b=img_b,
+            ids_a=ids_a,
+            ids_b=ids_b,
+            bg0=bg0,
+            bg1=bg1,
+            visualize=visualize,
+            step=step,
+            new_epoch=new_epoch,
+        )
+        logger.info(f"{epoch = }, {step = }, {loss.item() = }")
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
-        # logging
-        loss_log.update(loss.item(), img_a.size(0))
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        if i % args.print_freq == 0:
-            progress.display(i)
 
         step += 1
 
@@ -611,16 +522,10 @@ def train(train_loader_list, model, optimizer, epoch, args, step, logger, rank):
     return step
 
 
-def save_checkpoint(
-    state,
-    is_best,
-    epoch,
-    filename="checkpoint.ckpt",
-):
+def save_checkpoint(state, is_best, filename="checkpoint.ckpt"):
     torch.save(state, filename)
     if is_best:
-        copy_file = os.path.join(Path(filename).parent, "checkpoint.ckpt")
-        shutil.copyfile(filename, copy_file)
+        shutil.copyfile(filename, "best_checkpoint.pth")
 
 
 class ProgressMeter(object):
@@ -634,8 +539,8 @@ class ProgressMeter(object):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
         self.logger.info("    ".join(entries))
-        # if torch.distributed.get_rank() == 0:
-        #     self.logger.info("\t".join(entries))
+        if torch.distributed.get_rank() == 0:
+            self.logger.info("\t".join(entries))
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
