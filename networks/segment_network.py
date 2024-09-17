@@ -24,6 +24,10 @@ class PretrainType(Enum):
     MOCO = 5
     PROPOSED = 6
     PIXPRO = 7
+    DENSECL = 8
+    DINO = 9
+    BARLOWTWINS = 10
+    VICEREGL = 11
 
 
 class Stage(Enum):
@@ -56,19 +60,34 @@ class SegmentationModule(L.LightningModule):
         elif pretrain_type == PretrainType.RANDOM:
             pass
         elif pretrain_type in [
-            PretrainType.CP2,
+            # PretrainType.CP2,
             PretrainType.MOCO,
             PretrainType.BYOL,
             PretrainType.PROPOSED,
         ]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
-            assert (
-                checkpoint["pretrain_type"] == pretrain_type.name
-            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
                 x.replace("module.encoder_q.", ""): y
-                for x, y in checkpoint["state_dict"].items()
+                for x, y in checkpoint.items()
+                if "encoder_q" in x
+            }
+            # Remove the conv_seg weights for now (mismatch in num_classes)
+            state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
+            print(self.model.load_state_dict(state_dict, strict=False))
+
+        elif pretrain_type == PretrainType.CP2:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            state_dict = {
+                x.replace("module.encoder_q.", ""): y
+                for x, y in checkpoint.items()
                 if "encoder_q" in x
             }
             # Remove the conv_seg weights for now (mismatch in num_classes)
@@ -85,16 +104,53 @@ class SegmentationModule(L.LightningModule):
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
             # Check that the weights match the type
-            assert (
-                checkpoint["pretrain_type"] == pretrain_type.name
-            ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
             state_dict = {
                 x.replace("module.encoder.", ""): y
                 for x, y in checkpoint["model"].items()
                 if "module.encoder." in x
             }
+            
             print(self.model.backbone.load_state_dict(state_dict, strict=True))
+        elif pretrain_type == PretrainType.DENSECL:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            state_dict = checkpoint["state_dict"]
+            
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
 
+            print(self.model.load_state_dict(state_dict, strict=False))
+            
+        elif pretrain_type == PretrainType.DINO:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+        
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+
+            print(self.model.load_state_dict(checkpoint, strict=False))
+        elif pretrain_type == PretrainType.BARLOWTWINS:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+
+            print(self.model.load_state_dict(checkpoint, strict=False))
+        elif pretrain_type == PretrainType.VICEREGL:
+            checkpoint_path = self.model.backbone.init_cfg.checkpoint
+            checkpoint = torch.load(checkpoint_path)
+            
+            # assert (
+            #     checkpoint["pretrain_type"] == pretrain_type.name
+            # ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+
+            print(self.model.load_state_dict(checkpoint, strict=False))
         else:
             raise NotImplementedError(f"{pretrain_type = }")
 
