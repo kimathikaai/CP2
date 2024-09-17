@@ -7,6 +7,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+def calcuate_dense_loss_stats(logits_dense, labels_dense):
+    assert (
+        labels_dense.shape == logits_dense.shape
+    ), f"{labels_dense.shape = }, {logits_dense.shape = }"
+    positive_scores = logits_dense * labels_dense
+    negative_scores = logits_dense * ~(labels_dense.bool())
+
+    negative_scores_average = negative_scores.mean((1, 2))
+    positive_scores_average = positive_scores.mean((1, 2))
+    return positive_scores_average, negative_scores_average
+
 
 def get_masked_iou(
     map_a: torch.Tensor,

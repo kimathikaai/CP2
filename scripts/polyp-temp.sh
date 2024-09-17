@@ -12,53 +12,19 @@ pretrain_config_file='configs/config_pretrain.py'
 
 # Run tests
 python -m unittest discover -s tests  -v
-tags="$(date +%m-%d-%H%M%S)"
+tags="$(date +%m-%d-%H%M%S)-ablation"
 
-#
-# POLYP PRE-TRAINING
-#
-
-for pretrain_type in BYOL MOCO CP2
+pretrain_type=PROPOSED
+for pretrain_run_id in '240909211944-pretrain-PROPOSED-POLYP-ABLATION' '240909202835-pretrain-PROPOSED-POLYP-ABLATION' '240909193747-pretrain-PROPOSED-POLYP-ABLATION' '240909184720-pretrain-PROPOSED-POLYP-ABLATION' '240909175630-pretrain-PROPOSED-POLYP-ABLATION' '240909170519-pretrain-PROPOSED-POLYP-ABLATION' '240909161408-pretrain-PROPOSED-POLYP-ABLATION' '240909152259-pretrain-PROPOSED-POLYP-ABLATION' '240909143148-pretrain-PROPOSED-POLYP-ABLATION' '240909134020-pretrain-PROPOSED-POLYP-ABLATION' '240909123815-pretrain-PROPOSED-POLYP-ABLATION' '240909103212-pretrain-PROPOSED-POLYP-ABLATION' '240909082516-pretrain-PROPOSED-POLYP-ABLATION' '240909061733-pretrain-PROPOSED-POLYP-ABLATION' '240909040919-pretrain-PROPOSED-POLYP-ABLATION' '240909020053-pretrain-PROPOSED-POLYP-ABLATION' '240908235155-pretrain-PROPOSED-POLYP-ABLATION' '240908214344-pretrain-PROPOSED-POLYP-ABLATION' '240908193741-pretrain-PROPOSED-POLYP-ABLATION' '240908173249-pretrain-PROPOSED-POLYP-ABLATION' '240907084756-pretrain-PROPOSED-POLYP-ABLATION'
 do
-    #
-    # PRE-TRAINING
-    #
-
-    # Create logging name
-    pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-POLYP"
-    echo "Started pre-training for ${pretrain_run_id}"
-
-    # Start pre-training
-    CUDA_VISIBLE_DEVICES=0,1 python main.py \
-        --seed 0 \
-        --run_id $pretrain_run_id \
-        --log_dir $log_dir \
-        --tags $tags \
-        --pretrain_type $pretrain_type \
-        --data_dirs $pretrain_dir \
-        --config $pretrain_config_file \
-        --epochs 10 \
-        --lr 0.001 \
-        --num-workers 64 \
-        --batch-size 128 \
-        --world-size $num_gpus \
-        --foreground_min 0.5 \
-        --foreground_max 0.8 \
-        --backbone_type 'DEEPLABV3' \
-        --cap_queue
-
-    #
-    # FINE-TUNE
-    #
-
-    # for dir in Kvasir-SEG CVC-ClinicDB CVC-ColonDB ETIS-LaribPolypDB
     for dir in Kvasir-SEG CVC-ClinicDB CVC-ColonDB ETIS-LaribPolypDB
+    # for dir in Kvasir-SEG CVC-ClinicDB
     do
-        for ratio in 0.3 0.6 1
+        for ratio in 1.0
         do
             for seed in 0 1 2
             do
-                run_id="$(date +"%y%m%d%H%M%S")-${dir}-${pretrain_type}-R${ratio}-S${seed}-POLYP"
+                run_id="$(date +"%y%m%d%H%M%S")-${dir}-${pretrain_type}-R${ratio}-S${seed}-POLYP-ABLATION"
                 current_dir=${data_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
@@ -69,11 +35,14 @@ do
                     --seed $seed\
                     --run_id $run_id\
                     --tags $tags \
+                    --offline_wandb \
                     --log_dir $log_dir\
                     --img_dirs $current_dir/Images \
                     --mask_dirs $current_dir/SegmentationImages \
                     --train_data_ratio $ratio \
+                    --learning_rate 0.0001 \
                     --num_gpus $num_gpus \
+                    --linear_evaluation \
                     --num_workers 32 \
                     --batch_size 16 \
                     --img_height 352 \

@@ -29,6 +29,8 @@ def get_args():
     parser.add_argument("--run_id", type=str, required=True, help='Unique identifier for a run')
     parser.add_argument("--tags", nargs='+', default=[], help='Tags to include for logging')
 
+    parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
+
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
@@ -50,11 +52,11 @@ def get_args():
     parser.add_argument('--img_width', default=512, type=int)
 
     parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
-    parser.add_argument("--learning_rate", type=float, default=0.001, help='Max learning rate used during training') 
+    parser.add_argument("--learning_rate", type=float, default=0.0001, help='Max learning rate used during training') 
     parser.add_argument("--epochs", type=int, default=20, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
-    parser.add_argument("--pretrain_path", type=str, default=None, help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
+    parser.add_argument("--pretrain_path", type=str, default='', help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], required=True)
 
     parser.add_argument("--linear_evaluation", action='store_true', help="Freeze the encoder")
@@ -174,7 +176,7 @@ def main(args):
     custom_callback = CustomCallback(images=images, masks=masks)
 
     # wandb logger
-    tags = ["finetune"] + args.tags
+    tags = ["finetune", "deterministic"] + args.tags
     if args.linear_evaluation:
         tags += ["linear-evaluation"]
     wandb_logger = WandbLogger(
@@ -182,16 +184,22 @@ def main(args):
         entity=args.wandb_team,
         tags=tags,
         name=args.run_id,
-        save_dir=args.run_dir,
+        save_dir=args.log_dir,
+        mode="offline" if args.offline_wandb else "online",
     )
 
     #
     # Setup the model
     #
     cfg = Config.fromfile(args.config)
-    if args.pretrain_path is not None and args.pretrain_type != PretrainType.IMAGENET:
+    # If no pretraining was used then assert that a path wasn't provided
+    if args.pretrain_path:
+        assert args.pretrain_type != PretrainType.NONE
         print(f"[INFO] Updating the pretrain_path to {args.pretrain_path = }")
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
+    else:
+        # Using empty string to denote no path
+        assert args.pretrain_path == "", f"{args.pretrain_path = }"
 
     cfg.model.decode_head.num_classes = args.num_classes
     model = SegmentationModule(
@@ -211,6 +219,7 @@ def main(args):
 
     # setup trainer
     trainer = L.Trainer(
+        deterministic=True,
         strategy="ddp" if args.num_gpus > 1 else "auto",
         accelerator="gpu",
         devices=args.num_gpus,
@@ -242,7 +251,8 @@ def main(args):
     # Test the model
     #
     if trainer.global_rank == 0:
-        torch.distributed.destroy_process_group()
+        if args.num_gpus > 1:
+            torch.distributed.destroy_process_group()
         # Setup a test trainer
         test_trainer = L.Trainer(
             devices=1,
