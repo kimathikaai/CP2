@@ -2,6 +2,3 @@ tmp/
 __pycache__/
 .DS_Store
 artifacts/
-.ipynb_checkpoints/
-*.png
-*.csv
