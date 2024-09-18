@@ -46,6 +46,7 @@ do
                     --num_gpus $num_gpus \
                     --num_workers 32 \
                     --learning_rate 0.001 \
+                    --data_split_type 'RANDOM' \
                     --batch_size 128 \
                     --img_height 512 \
                     --img_width 512 \
@@ -96,6 +97,7 @@ do
                     --num_gpus $num_gpus \
                     --num_workers 32 \
                     --learning_rate 0.001 \
+                    --data_split_type 'RANDOM' \
                     --batch_size 128 \
                     --img_height 512 \
                     --img_width 512 \
