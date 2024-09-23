@@ -34,7 +34,7 @@ def get_args():
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
-    parser.add_argument("--data_split_type", type=str, choices=[x.name for x in DataSplitType], default=DataSplitType.FILENAME.name)
+    parser.add_argument("--data_split_type", type=str, choices=[x.name for x in DataSplitType], default=DataSplitType.CSV.name)
 
     parser.add_argument("--log_dir", type=str, required=True, help='For storing artifacts')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
@@ -47,6 +47,7 @@ def get_args():
     parser.add_argument("--num_classes", type=int, default=2)
 
     parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
+    parser.add_argument('--dataset_type', type=str, help='Type of Data, flag for cityscapes',default="Polyp")
 
     parser.add_argument('--img_height', default=512, type=int)
     parser.add_argument('--img_width', default=512, type=int)
@@ -209,6 +210,7 @@ def main(args):
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
+        dataset_type = args.dataset_type
     )
 
     # if linear evaluation freeze backbone
