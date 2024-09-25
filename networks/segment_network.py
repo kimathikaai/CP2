@@ -9,6 +9,14 @@ from torchmetrics import (Accuracy, Dice, F1Score, JaccardIndex,
                           MetricCollection, Precision, Recall)
 
 BACKGROUND_CLASS = 0
+from labels import Label,labels
+import numpy as np
+
+def get_cityscapes_labels():
+    id_to_trainId = np.full((34,), 255, dtype=np.uint8)  # Set default to 255 (ignore label)
+    for label in labels:
+        id_to_trainId[label.id] = label.trainId
+    return id_to_trainId
 
 
 class PretrainType(Enum):
@@ -52,10 +60,13 @@ class SegmentationModule(L.LightningModule):
         weight_decay,
         num_classes,
         image_shape,
+        dataset_type
     ):
         super().__init__()
         self.save_hyperparameters()
 
+        #Flag for Cityscapes
+        self.dataset_type = dataset_type
         # Initialize the model
         self.model = build_segmentor(model_config.model)
         assert pretrain_type in PretrainType
@@ -161,7 +172,11 @@ class SegmentationModule(L.LightningModule):
 
         # RuntimeError: nll_loss2d_forward_out_cuda_template does not have a deterministic implementation, but you set 'torch.use_deterministic_algorithms(True)'
         # https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
-        self.loss = nn.CrossEntropyLoss(reduction="none")
+        if dataset_type == "CityScapes":
+            self.loss = nn.CrossEntropyLoss(ignore_index = 255, reduction="none")
+            
+        else:
+            self.loss = nn.CrossEntropyLoss(reduction="none")
 
         #
         # Metrics
@@ -225,51 +240,117 @@ class SegmentationModule(L.LightningModule):
 
     def shared_step(self, batch, stage: Stage):
         images, masks = batch
-        logits, argmax_logits = self.forward(images)
-        # argmax_logits.shape = BxCxHxW
-        loss = self.loss(logits, masks)
-        # For reproducability
-        loss = loss.mean()
 
-        # update logs
-        self.log(
-            f"{stage.name.lower()}_loss",
-            loss,
-            sync_dist=True,
-            on_epoch=True,
-            on_step=True,
-            add_dataloader_idx=False,
-        )
-        if stage == Stage.TRAIN:
-            self.train_metrics.update(argmax_logits, masks)
-            self.log_dict(
-                {k: v for k, v in self.train_metrics.items()},
+        # Remap masks to trainId values
+        if self.dataset_type == "CityScapes": # Flag for cityscapes
+            masks_np = masks.cpu().numpy()
+            remapped_masks_np = np.full_like(masks_np, 255)
+            # Only remap where masks are not 255
+            valid_mask = masks_np != 255
+            id_to_trainId = get_cityscapes_labels()
+            remapped_masks_np[valid_mask] = id_to_trainId[masks_np[valid_mask]]
+
+            # Convert back to Torch tensor
+            remapped_masks = torch.from_numpy(remapped_masks_np).to(masks.device)
+
+            logits, argmax_logits = self.forward(images)
+            # argmax_logits.shape = BxCxHxW
+            loss = self.loss(logits, remapped_masks)
+            # For reproducability
+            loss = loss.mean()
+
+            valid_mask = remapped_masks != 255
+            masks_filtered = remapped_masks[valid_mask]
+            argmax_logits_filtered = argmax_logits[valid_mask]
+            
+            self.log(
+                f"{stage.name.lower()}_loss",
+                loss,
+                sync_dist=True,
                 on_epoch=True,
                 on_step=True,
-            )
-        elif stage == Stage.VAL:
-            self.val_metrics.update(argmax_logits, masks)
-            self.log_dict(
-                {k: v for k, v in self.val_metrics.items()},
-                on_epoch=True,
-                on_step=False,
                 add_dataloader_idx=False,
             )
-        elif stage == Stage.PSEUDOTEST:
-            self.pseudo_test_metrics.update(argmax_logits, masks)
-            self.log_dict(
-                {k: v for k, v in self.pseudo_test_metrics.items()},
+            if stage == Stage.TRAIN:
+                self.train_metrics.update(argmax_logits_filtered, masks_filtered)
+                self.log_dict(
+                    {k: v for k, v in self.train_metrics.items()},
+                    on_epoch=True,
+                    on_step=True,
+                )
+            elif stage == Stage.VAL:
+                self.val_metrics.update(argmax_logits_filtered, masks_filtered)
+                self.log_dict(
+                    {k: v for k, v in self.val_metrics.items()},
+                    on_epoch=True,
+                    on_step=False,
+                    add_dataloader_idx=False,
+                )
+            elif stage == Stage.PSEUDOTEST:
+                self.pseudo_test_metrics.update(argmax_logits_filtered, masks_filtered)
+                self.log_dict(
+                    {k: v for k, v in self.pseudo_test_metrics.items()},
+                    on_epoch=True,
+                    on_step=False,
+                    add_dataloader_idx=False,
+                )
+            elif stage == Stage.TEST:
+                self.test_metrics.update(argmax_logits_filtered, masks_filtered)
+                self.log_dict(
+                    {k: v for k, v in self.test_metrics.items()},
+                    on_epoch=True,
+                    on_step=False,
+                )
+
+
+        else:
+
+            logits, argmax_logits = self.forward(images)
+            
+            # argmax_logits.shape = BxCxHxW
+            loss = self.loss(logits, masks)
+            # For reproducability
+            loss = loss.mean()
+
+            # update logs
+            self.log(
+                f"{stage.name.lower()}_loss",
+                loss,
+                sync_dist=True,
                 on_epoch=True,
-                on_step=False,
+                on_step=True,
                 add_dataloader_idx=False,
             )
-        elif stage == Stage.TEST:
-            self.test_metrics.update(argmax_logits, masks)
-            self.log_dict(
-                {k: v for k, v in self.test_metrics.items()},
-                on_epoch=True,
-                on_step=False,
-            )
+            if stage == Stage.TRAIN:
+                self.train_metrics.update(argmax_logits, masks)
+                self.log_dict(
+                    {k: v for k, v in self.train_metrics.items()},
+                    on_epoch=True,
+                    on_step=True,
+                )
+            elif stage == Stage.VAL:
+                self.val_metrics.update(argmax_logits, masks)
+                self.log_dict(
+                    {k: v for k, v in self.val_metrics.items()},
+                    on_epoch=True,
+                    on_step=False,
+                    add_dataloader_idx=False,
+                )
+            elif stage == Stage.PSEUDOTEST:
+                self.pseudo_test_metrics.update(argmax_logits, masks)
+                self.log_dict(
+                    {k: v for k, v in self.pseudo_test_metrics.items()},
+                    on_epoch=True,
+                    on_step=False,
+                    add_dataloader_idx=False,
+                )
+            elif stage == Stage.TEST:
+                self.test_metrics.update(argmax_logits, masks)
+                self.log_dict(
+                    {k: v for k, v in self.test_metrics.items()},
+                    on_epoch=True,
+                    on_step=False,
+                )
 
         return loss
 

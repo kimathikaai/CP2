@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
 
-from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader
+from datasets.pretrain_dataset import pil_image_loader, pil_mask_loader,read_paths_csv
 
 DATA_RANDOM_SEED = 0
 BASE_TRAIN_SPLIT = 0.7
@@ -61,6 +61,23 @@ def get_data_splits(
         data["train"] = [(x, y) for x, y in image_mask_paths if "train" in Path(x).stem]
         data["val"] = [(x, y) for x, y in image_mask_paths if "val" in Path(x).stem]
         data["test"] = [(x, y) for x, y in image_mask_paths if "test" in Path(x).stem]
+    elif data_split_type == DataSplitType.CSV:
+        
+        (x,y) = image_mask_paths[0]
+        img_parent = os.path.dirname(x) 
+        img_parent  = img_parent + "/"
+        mask_parent = os.path.dirname(y)
+        mask_parent  = mask_parent + "/"
+        split_type = ["train","val","test"]
+
+        for split in split_type:
+            csv_path_img = os.path.join(img_parent, f"{split}.csv")
+            included_paths = read_paths_csv(csv_path_img)
+            combined_path_img = [img_parent + path for path in included_paths]
+            combined_path_mask = [mask_parent + path for path in included_paths]
+            data[split] = list(zip(combined_path_img,combined_path_mask))
+
+        # (x,y ) for x,y in image_mask_paths 
     else:
         raise NotImplementedError(f"{data_split_type = }")
 
@@ -68,9 +85,10 @@ def get_data_splits(
     print(f"{len(data['train']) = }")
     print(f"{len(data['val']) = }")
     print(f"{len(data['test']) = }")
-    assert len(data["train"]) + len(data["val"]) + len(data["test"]) == len(
-        image_mask_paths
-    )
+    if data_split_type != DataSplitType.CSV:
+        assert len(data["train"]) + len(data["val"]) + len(data["test"]) == len(
+            image_mask_paths
+        )
 
     # Reduce train data
     if train_data_ratio < 1.0:
@@ -162,6 +180,8 @@ class SegmentationDataModule(L.LightningDataModule):
 
         # Remove the csv file
         self.image_paths = [x for x in self.image_paths if ".csv" not in x]
+        if data_split_type == DataSplitType.CSV: # For Cityscapes
+            self.mask_paths = [x for x in self.mask_paths if ".csv" not in x]
 
         # Make sure all images have corresponding masks
         self.image_mask_paths = []
