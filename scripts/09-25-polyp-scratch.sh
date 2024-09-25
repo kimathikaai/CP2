@@ -25,18 +25,21 @@ for pretrain_type in RANDOM NONE MOCO BYOL CP2
 do
     if [ "$pretrain_type" == "MOCO" ]; then
         pretrain_run_id="240816115548-pretrain-MOCO-POLYP"
+        pretrain_path="${log_dir}/${pretrain_run_id}/checkpoint.ckpt"
     
     elif [ "$pretrain_type" == "BYOL" ]; then
         pretrain_run_id="240816170945-pretrain-BYOL-POLYP"
+        pretrain_path="${log_dir}/${pretrain_run_id}/checkpoint.ckpt"
 
     elif [ "$pretrain_type" == "CP2" ]; then
         pretrain_run_id="240816040556-pretrain-CP2-POLY"
+        pretrain_path="${log_dir}/${pretrain_run_id}/checkpoint.ckpt"
 
     elif [ "$pretrain_type" == "NONE" ]; then
-        pretrain_run_id=""
+        pretrain_path=""
 
     elif [ "$pretrain_type" == "RANDOM" ]; then
-        pretrain_run_id=""
+        pretrain_path=""
 
     else
         echo "Unknown pretrain type: $pretrain_type"
@@ -55,7 +58,7 @@ do
                 echo "Fine-tuning ${run_id}"
 
                 CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
-                    --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
+                    --pretrain_path $pretrain_path \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
                     --seed $seed\
