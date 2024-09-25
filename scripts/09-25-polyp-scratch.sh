@@ -36,10 +36,10 @@ do
         pretrain_path="${log_dir}/${pretrain_run_id}/checkpoint.ckpt"
 
     elif [ "$pretrain_type" == "NONE" ]; then
-        pretrain_path=""
+        pretrain_path="x"
 
     elif [ "$pretrain_type" == "RANDOM" ]; then
-        pretrain_path=""
+        pretrain_path="x"
 
     else
         echo "Unknown pretrain type: $pretrain_type"
