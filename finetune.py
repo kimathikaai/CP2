@@ -193,13 +193,14 @@ def main(args):
     #
     cfg = Config.fromfile(args.config)
     # If no pretraining was used then assert that a path wasn't provided
-    if args.pretrain_path:
-        assert args.pretrain_type != PretrainType.NONE
+    if args.pretrain_type not in [PretrainType.NONE, PretrainType.RANDOM]:
+        assert os.path.isfile(args.pretrain_path), f"{args.pretrain_path = }"
         print(f"[INFO] Updating the pretrain_path to {args.pretrain_path = }")
         cfg.model.backbone.init_cfg.checkpoint = args.pretrain_path
     else:
-        # Using empty string to denote no path
-        assert args.pretrain_path == "", f"{args.pretrain_path = }"
+        assert not os.path.isfile(
+            args.pretrain_path
+        ), f"Don't provide a viable path for {args.pretrain_type = }, {args.pretrain_path = }"
 
     cfg.model.decode_head.num_classes = args.num_classes
     model = SegmentationModule(
