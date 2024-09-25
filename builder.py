@@ -152,6 +152,7 @@ class CP2_MOCO(nn.Module):
         K=65536,
         m=0.999,
         T=0.2,
+        pretrain_from_scratch=False,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
         lmbd_pixel_corr_weight=1,
@@ -224,9 +225,11 @@ class CP2_MOCO(nn.Module):
             self.encoder_k = build_segmentor(
                 cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
             )
-            # Initialize the model pretrained ImageNet weights
-            self.encoder_q.backbone.init_weights()
-            self.encoder_k.backbone.init_weights()
+            print(f"[INFO] Initializing with imagenet weights: {not pretrain_from_scratch}")
+            if not pretrain_from_scratch:
+                # Initialize the model pretrained ImageNet weights
+                self.encoder_q.backbone.init_weights()
+                self.encoder_k.backbone.init_weights()
         elif backbone_type == BackboneType.UNET_ENCODER_ONLY:
             self.encoder_q = UNET_ENCODER_ONLY(projector_dim=dim)
             self.encoder_k = UNET_ENCODER_ONLY(projector_dim=dim)

@@ -44,6 +44,8 @@ def get_args():
 
     parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
 
+    parser.add_argument('--pretrain_from_scratch', action='store_true', help='Whether to initialize with ImageNet weights')
+
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
@@ -379,6 +381,7 @@ def main_worker(rank, args):
         if args.pretrain_type == PretrainType.CP2
         or args.pretrain_type == PretrainType.PROPOSED
         else 256,
+        pretrain_from_scratch=args.pretrain_from_scratch,
         include_background=args.include_background,
         lmbd_cp2_dense_loss=args.lmbd_cp2_dense_loss,
         pretrain_type=args.pretrain_type,
