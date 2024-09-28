@@ -26,7 +26,7 @@ do
     #
 
     # Create logging name
-    pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PI"
+    pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-HI"
     echo "Started pre-training for ${pretrain_run_id}"
 
     # Start pre-training
