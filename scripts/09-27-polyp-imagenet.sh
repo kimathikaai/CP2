@@ -36,17 +36,17 @@ do
         --log_dir $log_dir \
         --tags $tags \
         --pretrain_type $pretrain_type \
-        --data_dirs "$data_dir/polyp-imagenet" \
+        --data_dirs "$data_dir/imagenet1k0_50000/Images" "$poly_pretrain_dir" \
         --config $pretrain_config_file \
-        --epochs 200 \
+        --epochs 10 \
         --lr 0.001 \
         --num-workers 64 \
-        --batch-size 32 \
+        --batch-size 128 \
         --world-size $num_gpus \
         --foreground_min 0.5 \
         --foreground_max 0.8 \
         --backbone_type 'DEEPLABV3' \
-        --cap_queue
+        --cap_queue 
 
     #
     # FINE-TUNE
