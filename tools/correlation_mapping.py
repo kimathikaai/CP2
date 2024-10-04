@@ -7,16 +7,97 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+
 def calcuate_dense_loss_stats(logits_dense, labels_dense):
     assert (
         labels_dense.shape == logits_dense.shape
     ), f"{labels_dense.shape = }, {logits_dense.shape = }"
-    positive_scores = logits_dense * labels_dense
-    negative_scores = logits_dense * ~(labels_dense.bool())
 
-    negative_scores_average = negative_scores.mean((1, 2))
-    positive_scores_average = positive_scores.mean((1, 2))
-    return positive_scores_average, negative_scores_average
+    def calculate_stats(scores):
+        # Average per pixel negative score in image_a w.r.t image_b
+        per_sample_average_scores = scores.nanmean((1, 2))
+        # Per sample  quantiles
+        per_sample_quartiles = torch.nanquantile(
+            scores.flatten(1), q=torch.Tensor([0.25, 0.5, 0.75]), dim=1
+        )
+        # Per sample median  scores
+        per_sample_lower = per_sample_quartiles[0]
+        per_sample_median = per_sample_quartiles[1]
+        per_sample_upper = per_sample_quartiles[2]
+
+        assert len(per_sample_quartiles.shape) == 2, f"{per_sample_quartiles.shape = }"
+        assert (
+            len(per_sample_average_scores.shape) == 1
+        ), f"{per_sample_average_scores.shape = }"
+
+        return {
+            "quartiles": (
+                per_sample_lower,
+                per_sample_median,
+                per_sample_upper,
+            ),
+            "average": per_sample_average_scores,
+        }
+
+    positive_scores = logits_dense.detach().clone()
+    # Set negative scores to nan
+    positive_scores[~labels_dense] = torch.nan
+
+    negative_scores = logits_dense.detach().clone()
+    # Set positive scores to nan
+    negative_scores[labels_dense] = torch.nan
+
+    return {
+        "positive": calculate_stats(positive_scores),
+        "negative": calculate_stats(negative_scores),
+    }
+    #
+    # # Average per pixel negative score in image_a w.r.t image_b
+    # per_sample_average_negative_scores = negative_scores.nanmean((1, 2))
+    # # Average per pixel positive score in image_a w.r.t image_b
+    # per_sample_average_positive_scores = positive_scores.nanmean((1, 2))
+    #
+    # # Per sample negative quantiles
+    # per_sample_quartiles_negative = torch.nanquantile(
+    #     negative_scores.flatten(1), q=torch.Tensor([0.25, 0.5, 0.75]), dim=1
+    # )
+    # # Per sample median negative scores
+    # per_sample_lower_negative = per_sample_quartiles_negative[0]
+    # per_sample_median_negative = per_sample_quartiles_negative[1]
+    # per_sample_upper_negative = per_sample_quartiles_negative[2]
+    #
+    # # Per sample positive quantiles
+    # per_sample_quartiles_positive = torch.nanquantile(
+    #     positive_scores.flatten(1), q=torch.Tensor([0.25, 0.5, 0.75]), dim=1
+    # )
+    # # Per sample median positive scores
+    # per_sample_lower_positive = per_sample_quartiles_positive[0]
+    # per_sample_median_positive = per_sample_quartiles_positive[1]
+    # per_sample_upper_positive = per_sample_quartiles_positive[2]
+    #
+    # assert (
+    #     len(per_sample_quartiles_negative.shape) == 2
+    # ), f"{per_sample_quartiles_negative.shape = }"
+    #
+    # return {
+    #     "positive": {
+    #         "quartiles": (
+    #             per_sample_lower_positive,
+    #             per_sample_median_positive,
+    #             per_sample_upper_positive,
+    #         ),
+    #         "average": per_sample_average_positive_scores,
+    #     },
+    #     "negative": {
+    #         "quartiles": (
+    #             per_sample_lower_negative,
+    #             per_sample_median_negative,
+    #             per_sample_upper_negative,
+    #         ),
+    #         "average": per_sample_average_negative_scores,
+    #     },
+    # }
+    #
 
 
 def get_masked_iou(
