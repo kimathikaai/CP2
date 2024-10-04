@@ -833,7 +833,6 @@ class CP2_MOCO(nn.Module):
 
         self.instance_average_positive_scores.update(instance_average_positive_scores)
         self.instance_average_negative_scores.update(instance_average_negative_scores)
-        self.instance_negative_quartiles.update(instance_negative_quartiles)
         self.instance_lower_negative_scores.update(instance_lower_negative_scores)
         self.instance_median_negative_scores.update(instance_median_negative_scores)
         self.instance_upper_negative_scores.update(instance_upper_negative_scores)
@@ -1022,7 +1021,6 @@ class CP2_MOCO(nn.Module):
                         "step/dense_per_sample_upper_negative_scores": contrast_stats["negative"]["quartiles"][2].mean().item(),
                         "step/instance_average_positive_scores": instance_average_positive_scores.mean().item(),
                         "step/instance_average_negative_scores": instance_average_negative_scores.mean().item(),
-                        "step/instance_negative_quartiles": instance_negative_quartiles.mean().item(),
                         "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
                         "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
                         "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
@@ -1062,7 +1060,6 @@ class CP2_MOCO(nn.Module):
                         "dense_per_sample_upper_negative_scores": self.dense_per_sample_upper_negative_scores.compute(),
                         "instance_average_positive_scores": self.instance_average_positive_scores.compute(),
                         "instance_average_negative_scores": self.instance_average_negative_scores.compute(),
-                        "instance_negative_quartiles": self.instance_negative_quartiles.compute(),
                         "instance_lower_negative_scores": self.instance_lower_negative_scores.compute(),
                         "instance_median_negative_scores": self.instance_median_negative_scores.compute(),
                         "instance_upper_negative_scores": self.instance_upper_negative_scores.compute(),
@@ -1091,7 +1088,6 @@ class CP2_MOCO(nn.Module):
 
         self.instance_average_positive_scores.reset()
         self.instance_average_negative_scores.reset()
-        self.instance_negative_quartiles.reset()
         self.instance_lower_negative_scores.reset()
         self.instance_median_negative_scores.reset()
         self.instance_upper_negative_scores.reset()
