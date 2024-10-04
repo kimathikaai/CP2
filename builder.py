@@ -313,25 +313,26 @@ class CP2_MOCO(nn.Module):
         self.dense_per_sample_median_negative_scores = MeanMetric()
         self.dense_per_sample_upper_negative_scores = MeanMetric()
 
-        # fmt:off
-        wandb.define_metric("step/dense_per_sample_average_positive_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_lower_positive_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_median_positive_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_upper_positive_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_average_negative_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_lower_negative_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_median_negative_scores", summary='last')
-        wandb.define_metric("step/dense_per_sample_upper_negative_scores", summary='last')
+        if self.rank == 0:
+            # fmt:off
+            wandb.define_metric("step/dense_per_sample_average_positive_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_lower_positive_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_median_positive_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_upper_positive_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_average_negative_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_lower_negative_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_median_negative_scores", summary='last')
+            wandb.define_metric("step/dense_per_sample_upper_negative_scores", summary='last')
 
-        wandb.define_metric("dense_per_sample_average_positive_scores", summary='last')
-        wandb.define_metric("dense_per_sample_lower_positive_scores", summary='last')
-        wandb.define_metric("dense_per_sample_median_positive_scores", summary='last')
-        wandb.define_metric("dense_per_sample_upper_positive_scores", summary='last')
-        wandb.define_metric("dense_per_sample_average_negative_scores", summary='last')
-        wandb.define_metric("dense_per_sample_lower_negative_scores", summary='last')
-        wandb.define_metric("dense_per_sample_median_negative_scores", summary='last')
-        wandb.define_metric("dense_per_sample_upper_negative_scores", summary='last')
-        # fmt:on
+            wandb.define_metric("dense_per_sample_average_positive_scores", summary='last')
+            wandb.define_metric("dense_per_sample_lower_positive_scores", summary='last')
+            wandb.define_metric("dense_per_sample_median_positive_scores", summary='last')
+            wandb.define_metric("dense_per_sample_upper_positive_scores", summary='last')
+            wandb.define_metric("dense_per_sample_average_negative_scores", summary='last')
+            wandb.define_metric("dense_per_sample_lower_negative_scores", summary='last')
+            wandb.define_metric("dense_per_sample_median_negative_scores", summary='last')
+            wandb.define_metric("dense_per_sample_upper_negative_scores", summary='last')
+            # fmt:on
 
         #
         # Instance level stats
@@ -343,17 +344,18 @@ class CP2_MOCO(nn.Module):
         self.instance_median_negative_scores = MeanMetric()
         self.instance_upper_negative_scores = MeanMetric()
 
-        wandb.define_metric("step/instance_average_positive_scores", summary="last")
-        wandb.define_metric("step/instance_average_negative_scores", summary="last")
-        wandb.define_metric("step/instance_lower_negative_scores", summary="last")
-        wandb.define_metric("step/instance_median_negative_scores", summary="last")
-        wandb.define_metric("step/instance_upper_negative_scores", summary="last")
+        if self.rank == 0:
+            wandb.define_metric("step/instance_average_positive_scores", summary="last")
+            wandb.define_metric("step/instance_average_negative_scores", summary="last")
+            wandb.define_metric("step/instance_lower_negative_scores", summary="last")
+            wandb.define_metric("step/instance_median_negative_scores", summary="last")
+            wandb.define_metric("step/instance_upper_negative_scores", summary="last")
 
-        wandb.define_metric("instance_average_positive_scores", summary="last")
-        wandb.define_metric("instance_average_negative_scores", summary="last")
-        wandb.define_metric("instance_lower_negative_scores", summary="last")
-        wandb.define_metric("instance_median_negative_scores", summary="last")
-        wandb.define_metric("instance_upper_negative_scores", summary="last")
+            wandb.define_metric("instance_average_positive_scores", summary="last")
+            wandb.define_metric("instance_average_negative_scores", summary="last")
+            wandb.define_metric("instance_lower_negative_scores", summary="last")
+            wandb.define_metric("instance_median_negative_scores", summary="last")
+            wandb.define_metric("instance_upper_negative_scores", summary="last")
 
         self.loss_o = AverageMeter("Loss_overall", ":.4f")
         self.loss_i = AverageMeter("Loss_ins", ":.4f")
