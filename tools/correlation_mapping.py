@@ -18,7 +18,7 @@ def calcuate_dense_loss_stats(logits_dense, labels_dense):
         per_sample_average_scores = scores.nanmean((1, 2))
         # Per sample  quantiles
         per_sample_quartiles = torch.nanquantile(
-            scores.flatten(1), q=torch.Tensor([0.25, 0.5, 0.75], device=scores.device), dim=1
+            scores.flatten(1), q=torch.Tensor([0.25, 0.5, 0.75]).to(scores.device), dim=1
         )
         # Per sample median  scores
         per_sample_lower = per_sample_quartiles[0]
