@@ -18,6 +18,7 @@ import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
+from torchmetrics.aggregation import MeanMetric
 
 from networks.segment_network import PretrainType
 from tools.correlation_mapping import (calcuate_dense_loss_stats,
@@ -141,6 +142,7 @@ class NegativeType(Enum):
     NONE = 0
     FIXED = 1
     AVERAGE = 2
+    MEDIAN = 3
 
 
 class CP2_MOCO(nn.Module):
@@ -225,7 +227,9 @@ class CP2_MOCO(nn.Module):
             self.encoder_k = build_segmentor(
                 cfg.model, train_cfg=cfg.get("train_cfg"), test_cfg=cfg.get("test_cfg")
             )
-            print(f"[INFO] Initializing with imagenet weights: {not pretrain_from_scratch}")
+            print(
+                f"[INFO] Initializing with imagenet weights: {not pretrain_from_scratch}"
+            )
             if not pretrain_from_scratch:
                 # Initialize the model pretrained ImageNet weights
                 self.encoder_q.backbone.init_weights()
@@ -294,7 +298,63 @@ class CP2_MOCO(nn.Module):
 
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
 
+        #
         # Metrics
+        #
+
+        # contrastive
+        self.dense_per_sample_average_positive_scores = MeanMetric()
+        self.dense_per_sample_lower_positive_scores = MeanMetric()
+        self.dense_per_sample_median_positive_scores = MeanMetric()
+        self.dense_per_sample_upper_positive_scores = MeanMetric()
+
+        self.dense_per_sample_average_negative_scores = MeanMetric()
+        self.dense_per_sample_lower_negative_scores = MeanMetric()
+        self.dense_per_sample_median_negative_scores = MeanMetric()
+        self.dense_per_sample_upper_negative_scores = MeanMetric()
+
+        # fmt:off
+        wandb.define_metric("step/dense_per_sample_average_positive_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_lower_positive_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_median_positive_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_upper_positive_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_average_negative_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_lower_negative_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_median_negative_scores", summary='last')
+        wandb.define_metric("step/dense_per_sample_upper_negative_scores", summary='last')
+
+        wandb.define_metric("dense_per_sample_average_positive_scores", summary='last')
+        wandb.define_metric("dense_per_sample_lower_positive_scores", summary='last')
+        wandb.define_metric("dense_per_sample_median_positive_scores", summary='last')
+        wandb.define_metric("dense_per_sample_upper_positive_scores", summary='last')
+        wandb.define_metric("dense_per_sample_average_negative_scores", summary='last')
+        wandb.define_metric("dense_per_sample_lower_negative_scores", summary='last')
+        wandb.define_metric("dense_per_sample_median_negative_scores", summary='last')
+        wandb.define_metric("dense_per_sample_upper_negative_scores", summary='last')
+        # fmt:on
+
+        #
+        # Instance level stats
+        #
+
+        self.instance_average_positive_scores = MeanMetric()
+        self.instance_average_negative_scores = MeanMetric()
+        self.instance_lower_negative_scores = MeanMetric()
+        self.instance_median_negative_scores = MeanMetric()
+        self.instance_upper_negative_scores = MeanMetric()
+
+        wandb.define_metric("step/instance_average_positive_scores", summary="last")
+        wandb.define_metric("step/instance_average_negative_scores", summary="last")
+        wandb.define_metric("step/instance_lower_negative_scores", summary="last")
+        wandb.define_metric("step/instance_median_negative_scores", summary="last")
+        wandb.define_metric("step/instance_upper_negative_scores", summary="last")
+
+        wandb.define_metric("instance_average_positive_scores", summary="last")
+        wandb.define_metric("instance_average_negative_scores", summary="last")
+        wandb.define_metric("instance_lower_negative_scores", summary="last")
+        wandb.define_metric("instance_median_negative_scores", summary="last")
+        wandb.define_metric("instance_upper_negative_scores", summary="last")
+
         self.loss_o = AverageMeter("Loss_overall", ":.4f")
         self.loss_i = AverageMeter("Loss_ins", ":.4f")
         self.loss_d = AverageMeter("Loss_den", ":.4f")
@@ -668,16 +728,46 @@ class CP2_MOCO(nn.Module):
         # mask_dense = mask_dense.reshape(mask_dense.shape[0], -1)
 
         # Other stats
-        (
-            positive_scores_average,
-            negative_scores_average,
-        ) = calcuate_dense_loss_stats(_logits_dense, _labels_dense)
+        contrast_stats = calcuate_dense_loss_stats(_logits_dense, _labels_dense)
+        positive_scores_average = contrast_stats["positive"]["average"]
+        negative_scores_average = contrast_stats["negative"]["average"]
+
+        #
+        # Update dense stats
+        #
+        self.dense_per_sample_average_positive_scores.update(
+            contrast_stats["positive"]["average"]
+        )
+        self.dense_per_sample_lower_positive_scores.update(
+            contrast_stats["positive"]["quartiles"][0]
+        )
+        self.dense_per_sample_median_positive_scores.update(
+            contrast_stats["positive"]["quartiles"][1]
+        )
+        self.dense_per_sample_upper_positive_scores.update(
+            contrast_stats["positive"]["quartiles"][2]
+        )
+
+        self.dense_per_sample_average_negative_scores.update(
+            contrast_stats["negative"]["average"]
+        )
+        self.dense_per_sample_lower_negative_scores.update(
+            contrast_stats["negative"]["quartiles"][0]
+        )
+        self.dense_per_sample_median_negative_scores.update(
+            contrast_stats["negative"]["quartiles"][1]
+        )
+        self.dense_per_sample_upper_negative_scores.update(
+            contrast_stats["negative"]["quartiles"][2]
+        )
 
         # Don't focus on negatives that are too similar or already pretty far
         if self.negative_type == NegativeType.FIXED:
             negative_scores = torch.where(~(_labels_dense.bool()))
             _logits_dense[negative_scores] = (
-                2 / (1 + torch.exp(_logits_dense[negative_scores] * -self.negative_scale)) - 1
+                2
+                / (1 + torch.exp(_logits_dense[negative_scores] * -self.negative_scale))
+                - 1
             )
         # Shift the center based on the average score
         elif self.negative_type == NegativeType.AVERAGE:
@@ -687,7 +777,29 @@ class CP2_MOCO(nn.Module):
                 / (
                     1
                     + torch.exp(
-                        (_logits_dense - negative_scores_average.detach().reshape(-1,1,1))[negative_scores] * -self.negative_scale
+                        (
+                            _logits_dense
+                            - negative_scores_average.detach().reshape(-1, 1, 1)
+                        )[negative_scores]
+                        * -self.negative_scale
+                    )
+                )
+                - 1
+            )
+        elif self.negative_type == NegativeType.MEDIAN:
+            negative_scores = torch.where(~(_labels_dense.bool()))
+            _logits_dense[negative_scores] = (
+                2
+                / (
+                    1
+                    + torch.exp(
+                        (
+                            _logits_dense
+                            - contrast_stats["negative"]["quartiles"][1]
+                            .detach()
+                            .reshape(-1, 1, 1)
+                        )[negative_scores]
+                        * -self.negative_scale
                     )
                 )
                 - 1
@@ -707,6 +819,22 @@ class CP2_MOCO(nn.Module):
         l_pos = torch.einsum("nc,nc->n", [q_pos, k_pos]).unsqueeze(-1)
         l_neg = torch.einsum("nc,ck->nk", [q_pos, self.queue.clone().detach()])
         logits_moco = torch.cat([l_pos, l_neg], dim=1)
+
+        instance_average_positive_scores = l_pos
+        instance_average_negative_scores = l_neg.mean(1)
+        instance_negative_quartiles = torch.quantile(
+            l_neg, q=torch.Tensor([0.25, 0.5, 0.75]), dim=1
+        )
+        instance_lower_negative_scores = instance_negative_quartiles[0]
+        instance_median_negative_scores = instance_negative_quartiles[1]
+        instance_upper_negative_scores = instance_negative_quartiles[2]
+
+        self.instance_average_positive_scores.update(instance_average_positive_scores)
+        self.instance_average_negative_scores.update(instance_average_negative_scores)
+        self.instance_negative_quartiles.update(instance_negative_quartiles)
+        self.instance_lower_negative_scores.update(instance_lower_negative_scores)
+        self.instance_median_negative_scores.update(instance_median_negative_scores)
+        self.instance_upper_negative_scores.update(instance_upper_negative_scores)
 
         if self.include_background:
             # including background pixels
@@ -872,6 +1000,7 @@ class CP2_MOCO(nn.Module):
                 self.pretrain_type == PretrainType.CP2
                 or self.pretrain_type == PretrainType.PROPOSED
             ):
+                # fmt:off
                 wandb.log(
                     {
                         "train/loss_ins_step": self.loss_i.val,
@@ -881,8 +1010,23 @@ class CP2_MOCO(nn.Module):
                         "train/cross_image_variance_target_step": self.cross_image_variance_target.val,
                         "train/+ive_scores_step": positive_scores_average.mean(),
                         "train/-ive_scores_step": negative_scores_average.mean(),
+                        "step/dense_per_sample_average_positive_scores": contrast_stats["positive"]["average"].mean().item(),
+                        "step/dense_per_sample_lower_positive_scores": contrast_stats["positive"]["quartiles"][0].mean().item(),
+                        "step/dense_per_sample_median_positive_scores": contrast_stats["positive"]["quartiles"][1].mean().item(),
+                        "step/dense_per_sample_upper_positive_scores": contrast_stats["positive"]["quartiles"][2].mean().item(),
+                        "step/dense_per_sample_average_negative_scores": contrast_stats["negative"]["average"].mean().item(),
+                        "step/dense_per_sample_lower_negative_scores": contrast_stats["negative"]["quartiles"][0].mean().item(),
+                        "step/dense_per_sample_median_negative_scores": contrast_stats["negative"]["quartiles"][1].mean().item(),
+                        "step/dense_per_sample_upper_negative_scores": contrast_stats["negative"]["quartiles"][2].mean().item(),
+                        "step/instance_average_positive_scores": instance_average_positive_scores.mean().item(),
+                        "step/instance_average_negative_scores": instance_average_negative_scores.mean().item(),
+                        "step/instance_negative_quartiles": instance_negative_quartiles.mean().item(),
+                        "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
+                        "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
+                        "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
                     }
                 )
+                # fmt:on
 
         return loss
 
@@ -898,6 +1042,7 @@ class CP2_MOCO(nn.Module):
                 wandb.log({"train/acc_ins": self.acc_ins.avg})
 
             if self.pretrain_type == PretrainType.CP2:
+                # fmt:off
                 wandb.log(
                     {
                         "train/loss_ins": self.loss_i.avg,
@@ -905,8 +1050,23 @@ class CP2_MOCO(nn.Module):
                         "train/acc_seg": self.acc_seg.avg,
                         "train/cross_image_variance_source": self.cross_image_variance_source.avg,
                         "train/cross_image_variance_target": self.cross_image_variance_target.avg,
+                        "dense_per_sample_average_positive_scores": self.dense_per_sample_average_positive_scores.compute(),
+                        "dense_per_sample_lower_positive_scores": self.dense_per_sample_lower_positive_scores.compute(),
+                        "dense_per_sample_median_positive_scores": self.dense_per_sample_median_positive_scores.compute(),
+                        "dense_per_sample_upper_positive_scores": self.dense_per_sample_upper_positive_scores.compute(),
+                        "dense_per_sample_average_negative_scores": self.dense_per_sample_average_negative_scores.compute(),
+                        "dense_per_sample_lower_negative_scores": self.dense_per_sample_lower_negative_scores.compute(),
+                        "dense_per_sample_median_negative_scores": self.dense_per_sample_median_negative_scores.compute(),
+                        "dense_per_sample_upper_negative_scores": self.dense_per_sample_upper_negative_scores.compute(),
+                        "instance_average_positive_scores": self.instance_average_positive_scores.compute(),
+                        "instance_average_negative_scores": self.instance_average_negative_scores.compute(),
+                        "instance_negative_quartiles": self.instance_negative_quartiles.compute(),
+                        "instance_lower_negative_scores": self.instance_lower_negative_scores.compute(),
+                        "instance_median_negative_scores": self.instance_median_negative_scores.compute(),
+                        "instance_upper_negative_scores": self.instance_upper_negative_scores.compute(),
                     }
                 )
+                # fmt:on
         self.reset_metrics()
 
     def reset_metrics(self):
@@ -916,6 +1076,23 @@ class CP2_MOCO(nn.Module):
         self.acc_ins.reset()
         self.acc_seg.reset()
         self.cross_image_variance_source.reset()
+        self.cross_image_variance_target.reset()
+
+        self.dense_per_sample_average_positive_scores.reset()
+        self.dense_per_sample_lower_positive_scores.reset()
+        self.dense_per_sample_median_positive_scores.reset()
+        self.dense_per_sample_upper_positive_scores.reset()
+        self.dense_per_sample_average_negative_scores.reset()
+        self.dense_per_sample_lower_negative_scores.reset()
+        self.dense_per_sample_median_negative_scores.reset()
+        self.dense_per_sample_upper_negative_scores.reset()
+
+        self.instance_average_positive_scores.reset()
+        self.instance_average_negative_scores.reset()
+        self.instance_negative_quartiles.reset()
+        self.instance_lower_negative_scores.reset()
+        self.instance_median_negative_scores.reset()
+        self.instance_upper_negative_scores.reset()
 
     def _accuracy(self, output, target, topk=(1,)):
         """Computes the accuracy over the k top predictions for the specified values of k"""
