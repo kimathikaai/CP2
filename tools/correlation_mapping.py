@@ -41,11 +41,11 @@ def calcuate_dense_loss_stats(logits_dense, labels_dense):
 
     positive_scores = logits_dense.detach().clone()
     # Set negative scores to nan
-    positive_scores[~labels_dense] = torch.nan
+    positive_scores[~(labels_dense.bool())] = torch.nan
 
     negative_scores = logits_dense.detach().clone()
     # Set positive scores to nan
-    negative_scores[labels_dense] = torch.nan
+    negative_scores[labels_dense.bool()] = torch.nan
 
     return {
         "positive": calculate_stats(positive_scores),
