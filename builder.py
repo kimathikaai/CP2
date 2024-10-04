@@ -825,7 +825,7 @@ class CP2_MOCO(nn.Module):
         instance_average_positive_scores = l_pos
         instance_average_negative_scores = l_neg.mean(1)
         instance_negative_quartiles = torch.quantile(
-            l_neg, q=torch.Tensor([0.25, 0.5, 0.75]), dim=1
+            l_neg, q=torch.Tensor([0.25, 0.5, 0.75], device=l_neg.device), dim=1
         )
         instance_lower_negative_scores = instance_negative_quartiles[0]
         instance_median_negative_scores = instance_negative_quartiles[1]
