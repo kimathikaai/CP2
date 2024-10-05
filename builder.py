@@ -737,31 +737,31 @@ class CP2_MOCO(nn.Module):
         #
         # Update dense stats
         #
-        self.dense_per_sample_average_positive_scores.update(
-            contrast_stats["positive"]["average"]
-        )
-        self.dense_per_sample_lower_positive_scores.update(
-            contrast_stats["positive"]["quartiles"][0]
-        )
-        self.dense_per_sample_median_positive_scores.update(
-            contrast_stats["positive"]["quartiles"][1]
-        )
-        self.dense_per_sample_upper_positive_scores.update(
-            contrast_stats["positive"]["quartiles"][2]
-        )
-
-        self.dense_per_sample_average_negative_scores.update(
-            contrast_stats["negative"]["average"]
-        )
-        self.dense_per_sample_lower_negative_scores.update(
-            contrast_stats["negative"]["quartiles"][0]
-        )
-        self.dense_per_sample_median_negative_scores.update(
-            contrast_stats["negative"]["quartiles"][1]
-        )
-        self.dense_per_sample_upper_negative_scores.update(
-            contrast_stats["negative"]["quartiles"][2]
-        )
+        # self.dense_per_sample_average_positive_scores.update(
+        #     contrast_stats["positive"]["average"]
+        # )
+        # self.dense_per_sample_lower_positive_scores.update(
+        #     contrast_stats["positive"]["quartiles"][0]
+        # )
+        # self.dense_per_sample_median_positive_scores.update(
+        #     contrast_stats["positive"]["quartiles"][1]
+        # )
+        # self.dense_per_sample_upper_positive_scores.update(
+        #     contrast_stats["positive"]["quartiles"][2]
+        # )
+        #
+        # self.dense_per_sample_average_negative_scores.update(
+        #     contrast_stats["negative"]["average"]
+        # )
+        # self.dense_per_sample_lower_negative_scores.update(
+        #     contrast_stats["negative"]["quartiles"][0]
+        # )
+        # self.dense_per_sample_median_negative_scores.update(
+        #     contrast_stats["negative"]["quartiles"][1]
+        # )
+        # self.dense_per_sample_upper_negative_scores.update(
+        #     contrast_stats["negative"]["quartiles"][2]
+        # )
 
         # Don't focus on negatives that are too similar or already pretty far
         if self.negative_type == NegativeType.FIXED:
@@ -831,11 +831,11 @@ class CP2_MOCO(nn.Module):
         instance_median_negative_scores = instance_negative_quartiles[1]
         instance_upper_negative_scores = instance_negative_quartiles[2]
 
-        self.instance_average_positive_scores.update(instance_average_positive_scores)
-        self.instance_average_negative_scores.update(instance_average_negative_scores)
-        self.instance_lower_negative_scores.update(instance_lower_negative_scores)
-        self.instance_median_negative_scores.update(instance_median_negative_scores)
-        self.instance_upper_negative_scores.update(instance_upper_negative_scores)
+        # self.instance_average_positive_scores.update(instance_average_positive_scores)
+        # self.instance_average_negative_scores.update(instance_average_negative_scores)
+        # self.instance_lower_negative_scores.update(instance_lower_negative_scores)
+        # self.instance_median_negative_scores.update(instance_median_negative_scores)
+        # self.instance_upper_negative_scores.update(instance_upper_negative_scores)
 
         if self.include_background:
             # including background pixels
@@ -1050,19 +1050,19 @@ class CP2_MOCO(nn.Module):
                         "train/acc_seg": self.acc_seg.avg,
                         "train/cross_image_variance_source": self.cross_image_variance_source.avg,
                         "train/cross_image_variance_target": self.cross_image_variance_target.avg,
-                        "dense_per_sample_average_positive_scores": self.dense_per_sample_average_positive_scores.compute(),
-                        "dense_per_sample_lower_positive_scores": self.dense_per_sample_lower_positive_scores.compute(),
-                        "dense_per_sample_median_positive_scores": self.dense_per_sample_median_positive_scores.compute(),
-                        "dense_per_sample_upper_positive_scores": self.dense_per_sample_upper_positive_scores.compute(),
-                        "dense_per_sample_average_negative_scores": self.dense_per_sample_average_negative_scores.compute(),
-                        "dense_per_sample_lower_negative_scores": self.dense_per_sample_lower_negative_scores.compute(),
-                        "dense_per_sample_median_negative_scores": self.dense_per_sample_median_negative_scores.compute(),
-                        "dense_per_sample_upper_negative_scores": self.dense_per_sample_upper_negative_scores.compute(),
-                        "instance_average_positive_scores": self.instance_average_positive_scores.compute(),
-                        "instance_average_negative_scores": self.instance_average_negative_scores.compute(),
-                        "instance_lower_negative_scores": self.instance_lower_negative_scores.compute(),
-                        "instance_median_negative_scores": self.instance_median_negative_scores.compute(),
-                        "instance_upper_negative_scores": self.instance_upper_negative_scores.compute(),
+                        # "dense_per_sample_average_positive_scores": self.dense_per_sample_average_positive_scores.compute(),
+                        # "dense_per_sample_lower_positive_scores": self.dense_per_sample_lower_positive_scores.compute(),
+                        # "dense_per_sample_median_positive_scores": self.dense_per_sample_median_positive_scores.compute(),
+                        # "dense_per_sample_upper_positive_scores": self.dense_per_sample_upper_positive_scores.compute(),
+                        # "dense_per_sample_average_negative_scores": self.dense_per_sample_average_negative_scores.compute(),
+                        # "dense_per_sample_lower_negative_scores": self.dense_per_sample_lower_negative_scores.compute(),
+                        # "dense_per_sample_median_negative_scores": self.dense_per_sample_median_negative_scores.compute(),
+                        # "dense_per_sample_upper_negative_scores": self.dense_per_sample_upper_negative_scores.compute(),
+                        # "instance_average_positive_scores": self.instance_average_positive_scores.compute(),
+                        # "instance_average_negative_scores": self.instance_average_negative_scores.compute(),
+                        # "instance_lower_negative_scores": self.instance_lower_negative_scores.compute(),
+                        # "instance_median_negative_scores": self.instance_median_negative_scores.compute(),
+                        # "instance_upper_negative_scores": self.instance_upper_negative_scores.compute(),
                     }
                 )
                 # fmt:on
@@ -1077,20 +1077,20 @@ class CP2_MOCO(nn.Module):
         self.cross_image_variance_source.reset()
         self.cross_image_variance_target.reset()
 
-        self.dense_per_sample_average_positive_scores.reset()
-        self.dense_per_sample_lower_positive_scores.reset()
-        self.dense_per_sample_median_positive_scores.reset()
-        self.dense_per_sample_upper_positive_scores.reset()
-        self.dense_per_sample_average_negative_scores.reset()
-        self.dense_per_sample_lower_negative_scores.reset()
-        self.dense_per_sample_median_negative_scores.reset()
-        self.dense_per_sample_upper_negative_scores.reset()
-
-        self.instance_average_positive_scores.reset()
-        self.instance_average_negative_scores.reset()
-        self.instance_lower_negative_scores.reset()
-        self.instance_median_negative_scores.reset()
-        self.instance_upper_negative_scores.reset()
+        # self.dense_per_sample_average_positive_scores.reset()
+        # self.dense_per_sample_lower_positive_scores.reset()
+        # self.dense_per_sample_median_positive_scores.reset()
+        # self.dense_per_sample_upper_positive_scores.reset()
+        # self.dense_per_sample_average_negative_scores.reset()
+        # self.dense_per_sample_lower_negative_scores.reset()
+        # self.dense_per_sample_median_negative_scores.reset()
+        # self.dense_per_sample_upper_negative_scores.reset()
+        #
+        # self.instance_average_positive_scores.reset()
+        # self.instance_average_negative_scores.reset()
+        # self.instance_lower_negative_scores.reset()
+        # self.instance_median_negative_scores.reset()
+        # self.instance_upper_negative_scores.reset()
 
     def _accuracy(self, output, target, topk=(1,)):
         """Computes the accuracy over the k top predictions for the specified values of k"""
