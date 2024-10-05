@@ -75,6 +75,9 @@ def get_args():
     parser.add_argument('--cap_queue', action='store_true', help='Cap queue size to dataset size')
     parser.add_argument('--include_background', action='store_true', help='Include background aggregate pixels as negative pairs')
 
+    parser.add_argument('--dense_logits_temp', default=1, type=float)
+    parser.add_argument('--instance_logits_temp', default=0.2, type=float)
+
     parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
 
     parser.add_argument('--img_height', default=224, type=int)
@@ -390,8 +393,10 @@ def main_worker(rank, args):
         negative_type=args.negative_type,
         negative_scale=args.negative_scale,
         lmbd_pixel_corr_weight=args.lmbd_pixel_corr_weight,
-        lmbd_region_corr_weight=args.lmbd_pixel_corr_weight,
+        lmbd_region_corr_weight=args.lmbd_region_corr_weight,
         lmbd_not_corr_weight=args.lmbd_not_corr_weight,
+        dense_logits_temp=args.dense_logits_temp,
+        instance_logits_temp=args.instance_logits_temp,
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         device=device,
         rank=rank,
