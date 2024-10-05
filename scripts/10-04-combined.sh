@@ -46,6 +46,7 @@ do
         --foreground_min 0.5 \
         --foreground_max 0.8 \
         --backbone_type 'DEEPLABV3' \
+        --offline_wandb \
         --cap_queue 
 
     #
