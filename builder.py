@@ -153,7 +153,7 @@ class CP2_MOCO(nn.Module):
         dim=128,
         K=65536,
         m=0.999,
-        T=0.2,
+        instance_logits_temp=0.2,
         pretrain_from_scratch=False,
         include_background=False,
         lmbd_cp2_dense_loss=0.2,
@@ -165,6 +165,7 @@ class CP2_MOCO(nn.Module):
         pretrain_type=PretrainType.CP2,
         backbone_type=BackboneType.DEEPLABV3,
         mapping_type=MappingType.CP2,
+        dense_logits_temp=1,
         unet_truncated_dec_blocks=2,
         device=None,
     ):
@@ -172,13 +173,14 @@ class CP2_MOCO(nn.Module):
 
         self.K = K
         self.m = m
-        self.T = T
+        self.instance_logits_temp = instance_logits_temp
         self.dim = dim
         self.include_background = include_background
         self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
         self.device = device
         self.rank = rank
         self.epoch = 0
+        self.dense_logits_temp = dense_logits_temp
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -492,7 +494,7 @@ class CP2_MOCO(nn.Module):
         # dequeue and enqueue
         self._dequeue_and_enqueue(k)
 
-        loss = F.cross_entropy(logits_moco/self.T, labels_moco).mean()
+        loss = F.cross_entropy(logits_moco/self.instance_logits_temp, labels_moco).mean()
 
         acc1, acc5 = self._accuracy(logits_moco, labels_moco, topk=(1, 5))
 
@@ -846,7 +848,7 @@ class CP2_MOCO(nn.Module):
         labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.long).cuda()
 
         # apply temperature
-        logits_moco /= self.T
+        logits_moco /= self.instance_logits_temp
 
         # dequeue and enqueue
         self._dequeue_and_enqueue(k_pos)
@@ -854,6 +856,7 @@ class CP2_MOCO(nn.Module):
         loss_instance = F.cross_entropy(logits_moco, labels_moco)
 
         # dense loss of softmax
+        logits_dense /= self.dense_logits_temp
         output_dense_log = (-1.0) * nn.LogSoftmax(dim=1)(logits_dense)
         output_dense_log = output_dense_log.reshape(output_dense_log.shape[0], -1)
         loss_dense = torch.mean(
