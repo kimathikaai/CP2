@@ -48,7 +48,7 @@ CUDA_VISIBLE_DEVICES=0,2 python main.py \
     --foreground_min 0.5 \
     --foreground_max 0.8 \
     --backbone_type 'DEEPLABV3' \
-    --mapping_type 'PIXEL_REGION_ID' \
+    --mapping_type 'PIXEL_ID' \
     --negative_scale 4 \
     --negative_type $negative_type \
     --lmbd_pixel_corr_weight $lmbd_pixel_corr_weight \
