@@ -502,13 +502,29 @@ class CP2_MOCO(nn.Module):
         self.loss_o.update(loss.item(), img_a.size(0))
         self.acc_ins.update(acc1[0], img_a.size(0))
 
+        instance_average_positive_scores = l_pos
+        instance_average_negative_scores = l_neg.mean(1)
+        instance_negative_quartiles = torch.quantile(
+            l_neg, q=torch.Tensor([0.25, 0.5, 0.75]).to(l_neg.device), dim=1
+        )
+        instance_lower_negative_scores = instance_negative_quartiles[0]
+        instance_median_negative_scores = instance_negative_quartiles[1]
+        instance_upper_negative_scores = instance_negative_quartiles[2]
+
         if self.rank == 0:
+            # fmt:off
             wandb.log(
                 {
                     "train/loss_step": self.loss_o.val,
                     "train/acc_ins_step": self.acc_ins.val,
+                    "step/instance_average_positive_scores": instance_average_positive_scores.mean().item(),
+                    "step/instance_average_negative_scores": instance_average_negative_scores.mean().item(),
+                    "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
+                    "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
+                    "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
                 }
             )
+            # fmt:on
 
 
         return loss
