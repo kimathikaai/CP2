@@ -19,7 +19,7 @@ tags="$(date +%m-%d-%H%M%S)"
 # POLYP PRE-TRAINING
 #
 
-for pretrain_type in CP2
+for pretrain_type in MoCo BYOL
 do
     #
     # PRE-TRAINING (Polyp-Small)
