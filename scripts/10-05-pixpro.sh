@@ -62,6 +62,8 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --master_port 12348 
 deactivate
 source /home/kkaai/envs/cp2/bin/activate
 cd /home/kkaai/workspace/CP2
+git pull origin
+git checkout densecl
 
 # Run tests
 python -m unittest discover -s tests  -v
