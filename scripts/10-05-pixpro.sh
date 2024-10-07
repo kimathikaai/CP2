@@ -25,7 +25,7 @@ run_id="$(date +"%y%m%d%H%M%S")-PixPro-PHHS"
 # --zip  
 # python main_pretrain.py \
 # --amp-opt-level O1 \
-CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --master_port 12348 --nproc_per_node=2 \
+CUDA_VISIBLE_DEVICES=2,3 python -m torch.distributed.launch --master_port 12348 --nproc_per_node=2 \
     main_pretrain.py \
     --seed 0 \
     --run_id $run_id \
@@ -85,7 +85,7 @@ do
             current_dir=${data_dir}/${dir}
             echo "Fine-tuning ${run_id}"
 
-            CUDA_VISIBLE_DEVICES=0,2 python finetune.py \
+            CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                 --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                 --pretrain_type $pretrain_type \
                 --config $finetune_config_file \
@@ -118,7 +118,7 @@ do
             current_dir=${hist_dir}/${dir}
             echo "Fine-tuning ${run_id}"
 
-            CUDA_VISIBLE_DEVICES=0,2 python finetune.py \
+            CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                 --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                 --pretrain_type $pretrain_type \
                 --config $finetune_config_file \
