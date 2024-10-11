@@ -29,7 +29,7 @@ do
     pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PA"
     echo "Started pre-training for ${pretrain_run_id}"
 
-    Start pre-training
+    # Start pre-training
     CUDA_VISIBLE_DEVICES=0,1 python main.py \
         --seed 0 \
         --run_id $pretrain_run_id \
