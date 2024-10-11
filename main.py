@@ -371,7 +371,7 @@ def main_worker(rank, args):
     # Model
     #
     # instantiate the model(it's your own model) and move it to the right device
-    model = builder.CP2_MOCO(
+    model = builder.MODEL(
         cfg,
         m=0.999
         if args.pretrain_type == PretrainType.CP2
