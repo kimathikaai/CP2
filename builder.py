@@ -704,6 +704,20 @@ class MODEL(nn.Module):
             [q_global, self.queue.clone().detach()],
         )
 
+        # Compute variance metrics
+        cross_image_variance_source = q_global.std(0).mean()
+        cross_image_variance_target = k_global.std(0).mean()
+
+        # Compute score metrics
+        instance_average_positive_scores = pos_global
+        instance_average_negative_scores = neg_global.mean(1)
+        instance_negative_quartiles = torch.quantile(
+            neg_global, q=torch.Tensor([0.25, 0.5, 0.75]).to(neg_global.device), dim=1
+        )
+        instance_lower_negative_scores = instance_negative_quartiles[0]
+        instance_median_negative_scores = instance_negative_quartiles[1]
+        instance_upper_negative_scores = instance_negative_quartiles[2]
+
         # local backbone feature similarity
         backbone_sim_matrix = torch.einsum(
             "ncx,ncy->nxy", [embd_q, embd_k]
@@ -721,6 +735,15 @@ class MODEL(nn.Module):
 
         neg_local = torch.einsum("nc,ck->nk", [q_local, self.queue2.clone().detach()])
 
+        dense_average_positive_scores = pos_local
+        dense_average_negative_scores = neg_local.mean(1)
+        dense_negative_quartiles = torch.quantile(
+            neg_local, q=torch.Tensor([0.25, 0.5, 0.75]).to(neg_local.device), dim=1
+        )
+        dense_lower_negative_scores = dense_negative_quartiles[0]
+        dense_median_negative_scores = dense_negative_quartiles[1]
+        dense_upper_negative_scores = dense_negative_quartiles[2]
+
         # losses
         loss_global = self.contrastive_head(
             pos=pos_global, neg=neg_global, temperature=self.temp_global
@@ -735,6 +758,36 @@ class MODEL(nn.Module):
         # Update momentum queue
         self._dequeue_and_enqueue(k_global)
         self._dequeue_and_enqueue2(k_local_proj_pooled)
+
+        # Update logs
+        self.loss_o.update(loss.item(), img_a.size(0))
+        self.loss_i.update(loss_global.item(), batch_size)
+        self.loss_d.update(loss_local.item(), batch_size)
+        self.cross_image_variance_source.update(cross_image_variance_source, batch_size)
+        self.cross_image_variance_target.update(cross_image_variance_target, batch_size)
+
+        if self.rank == 0:
+            # fmt:off
+            wandb.log(
+                {
+                    "train/loss_step": self.loss_o.val,
+                    "train/loss_ins_step": self.loss_i.val,
+                    "train/loss_dense_step": self.loss_d.val,
+                    "train/cross_image_variance_source_step": self.cross_image_variance_source.val,
+                    "train/cross_image_variance_target_step": self.cross_image_variance_target.val,
+                    "step/instance_average_positive_scores": instance_average_positive_scores.mean().item(),
+                    "step/instance_average_negative_scores": instance_average_negative_scores.mean().item(),
+                    "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
+                    "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
+                    "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
+                    "step/dense_average_positive_scores": dense_average_positive_scores.mean().item(),
+                    "step/dense_average_negative_scores": dense_average_negative_scores.mean().item(),
+                    "step/dense_lower_negative_scores": dense_lower_negative_scores.mean().item(),
+                    "step/dense_median_negative_scores": dense_median_negative_scores.mean().item(),
+                    "step/dense_upper_negative_scores": dense_upper_negative_scores.mean().item(),
+                }
+            )
+            # fmt:on
 
         return loss
 
@@ -1355,6 +1408,17 @@ class MODEL(nn.Module):
                 PretrainType.PROPOSED,
             ]:
                 wandb.log({"train/acc_ins": self.acc_ins.avg})
+
+            if self.pretrain_type == PretrainType.DENSECL:
+                # fmt:off
+                wandb.log(
+                    {
+                        "train/loss_ins": self.loss_i.avg,
+                        "train/loss_dense": self.loss_d.avg,
+                        "train/cross_image_variance_source": self.cross_image_variance_source.avg,
+                        "train/cross_image_variance_target": self.cross_image_variance_target.avg,
+                    })
+                # fmt:on
 
             if self.pretrain_type == PretrainType.CP2:
                 # fmt:off
