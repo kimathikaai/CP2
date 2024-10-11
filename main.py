@@ -374,8 +374,8 @@ def main_worker(rank, args):
     model = builder.MODEL(
         cfg,
         m=0.999
-        if args.pretrain_type == PretrainType.CP2
-        or args.pretrain_type == PretrainType.PROPOSED
+        if args.pretrain_type
+        in [PretrainType.CP2, PretrainType.PROPOSED, PretrainType.DENSECL]
         else 0.996,
         K=min(len_dataset, DEFAULT_QUEUE_SIZE)
         if args.cap_queue
