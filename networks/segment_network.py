@@ -34,6 +34,7 @@ class PretrainType(Enum):
     CP2_IMGNET = 15
     MOSREP_IMGNET = 16
     CLOVE_IMGNET = 17
+    DENSECL = 18
 
 
 class Stage(Enum):
