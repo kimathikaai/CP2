@@ -18,6 +18,7 @@ import torchvision.transforms as T
 import wandb
 from mmseg.models import build_segmentor
 from mmseg.models.decode_heads import FCNHead
+from torch.cuda import temperature
 from torchmetrics.aggregation import MeanMetric
 
 from networks.segment_network import PretrainType
@@ -145,6 +146,35 @@ class NegativeType(Enum):
     MEDIAN = 3
 
 
+class ContrastiveHead(nn.Module):
+    """
+    Head for contrastive learning.
+    """
+
+    def __init__(self):
+        super(ContrastiveHead, self).__init__()
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, pos, neg, temperature):
+        """Forward head.
+
+        Args:
+            pos (Tensor): Nx1 positive similarity.
+            neg (Tensor): Nxk negative similarity.
+            temperature (float): The temperature hyper-parameter that
+                controls the concentration level of the distribution.
+                Default: 0.1.
+
+        Returns:
+            dict[str, Tensor]: A dictionary of loss components.
+        """
+        N = pos.size(0)
+        logits = torch.cat((pos, neg), dim=1)
+        logits /= temperature
+        labels = torch.zeros((N,), dtype=torch.long).cuda()
+        return self.criterion(logits, labels)
+
+
 class DenseCLNeck(nn.Module):
     """The non-linear neck in DenseCL.
     Single and dense in parallel: fc-relu-fc, conv-relu-conv
@@ -223,14 +253,23 @@ class DenseCLNeck(nn.Module):
         x_local_proj = self.local_projector(x)  # sxs: bxdxsxs
         x_local_pred = self.local_predictor(x_local_proj)
 
-        x_avgpool_local = self.avgpool_local(x_local_pred)  # 1x1: bxdx1x1
-        x_avgpool_local = x_avgpool_local.view(x_avgpool_local.size(0), -1)  # bxd
+        x_avgpool_local_proj = self.avgpool_local(x_local_proj)  # 1x1: bxdx1x1
+        x_avgpool_local_proj = x_avgpool_local_proj.view(
+            x_avgpool_local_proj.size(0), -1
+        )  # bxd
+
+        x_avgpool_local_pred = self.avgpool_local(x_local_pred)  # 1x1: bxdx1x1
+        x_avgpool_local_pred = x_avgpool_local_pred.view(
+            x_avgpool_local_pred.size(0), -1
+        )  # bxd
 
         return {
             "x_global_proj": x_global_proj,
             "x_local_proj": x_local_proj,
             "x_global_pred": x_global_pred,
             "x_local_pred": x_local_pred,
+            "x_avgpool_local_pred": x_avgpool_local_pred,
+            "x_avgpool_local_proj": x_avgpool_local_proj,
         }
 
 
@@ -256,20 +295,23 @@ class MODEL(nn.Module):
         mapping_type=MappingType.CP2,
         dense_logits_temp=1,
         unet_truncated_dec_blocks=2,
+        use_predictor=False,
         device=None,
     ):
         super(MODEL, self).__init__()
 
-        self.K = K
-        self.m = m
-        self.instance_logits_temp = instance_logits_temp
+        self.queue_len = K
+        self.momentum = m
+        self.temp_global = instance_logits_temp
         self.dim = dim
         self.include_background = include_background
-        self.lmbd_cp2_dense_loss = lmbd_cp2_dense_loss
+        self.lmbd_dense_loss = lmbd_cp2_dense_loss
         self.device = device
         self.rank = rank
         self.epoch = 0
-        self.dense_logits_temp = dense_logits_temp
+        self.temp_local = dense_logits_temp
+        self.contrastive_head = ContrastiveHead()
+        self.use_predictor = use_predictor
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -374,14 +416,18 @@ class MODEL(nn.Module):
             assert self.mapping_type == MappingType.CP2
 
         elif pretrain_type == PretrainType.DENSECL:
-            self.avgpool_global = nn.AdaptiveAvgPool2d((1, 1))
-
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
             )
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
             )
+            # Parameters
+            assert self.momentum == 0.999, f"{self.momentum = }"
+            assert self.lmbd_dense_loss == 0.5, f"{self.lmbd_dense_loss = }"
+            assert self.temp_global == 0.2, f"{self.temp_global = }"
+            assert self.temp_local == 0.2, f"{self.temp_local = }"
+            assert self.use_predictor == False
 
         # Exact copy parameters
         for param_q, param_k in zip(
@@ -394,11 +440,14 @@ class MODEL(nn.Module):
         # if self.pretrain_type in [PretrainType.MOCO, PretrainType.BYOL]:
         #     assert isinstance(self.encoder_q.decode_head, FCNHead)
 
-        # create the queue
-        self.register_buffer("queue", torch.randn(self.dim, K))
+        # create the global image queue
+        self.register_buffer("queue", torch.randn(self.dim, self.queue_len))
         self.queue = F.normalize(self.queue, dim=0)
-
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+        # create the local averaged pooled queue
+        self.register_buffer("queue2", torch.randn(self.dim, self.queue_len))
+        self.queue2 = F.normalize(self.queue2, dim=0)
+        self.register_buffer("queue2_ptr", torch.zeros(1, dtype=torch.long))
 
         #
         # Metrics
@@ -481,7 +530,9 @@ class MODEL(nn.Module):
         for param_q, param_k in zip(
             self.encoder_q.parameters(), self.encoder_k.parameters()
         ):
-            param_k.data = param_k.data * self.m + param_q.data * (1.0 - self.m)
+            param_k.data = param_k.data * self.momentum + param_q.data * (
+                1.0 - self.momentum
+            )
 
     @torch.no_grad()
     def _dequeue_and_enqueue(self, keys):
@@ -492,16 +543,36 @@ class MODEL(nn.Module):
 
         ptr = int(self.queue_ptr)
 
-        if ptr + batch_size > self.K:
-            self.queue[:, ptr : self.K] = keys[0 : self.K - ptr].T
-            self.queue[:, 0 : ptr + batch_size - self.K] = keys[
-                self.K - ptr : batch_size
+        if ptr + batch_size > self.queue_len:
+            self.queue[:, ptr : self.queue_len] = keys[0 : self.queue_len - ptr].T
+            self.queue[:, 0 : ptr + batch_size - self.queue_len] = keys[
+                self.queue_len - ptr : batch_size
             ].T
         else:
             self.queue[:, ptr : ptr + batch_size] = keys.T
-        ptr = (ptr + batch_size) % self.K  # move pointer
+        ptr = (ptr + batch_size) % self.queue_len  # move pointer
 
         self.queue_ptr[0] = ptr
+
+    @torch.no_grad()
+    def _dequeue_and_enqueue2(self, keys):
+        # gather keys before updating queue
+        keys = concat_all_gather(keys)
+
+        batch_size = keys.shape[0]
+
+        ptr = int(self.queue2_ptr)
+
+        if ptr + batch_size > self.queue_len:
+            self.queue2[:, ptr : self.queue_len] = keys[0 : self.queue_len - ptr].T
+            self.queue2[:, 0 : ptr + batch_size - self.queue_len] = keys[
+                self.queue_len - ptr : batch_size
+            ].T
+        else:
+            self.queue2[:, ptr : ptr + batch_size] = keys.T
+        ptr = (ptr + batch_size) % self.queue_len  # move pointer
+
+        self.queue2_ptr[0] = ptr
 
     @torch.no_grad()
     def _batch_shuffle_ddp(self, x):
@@ -563,8 +634,13 @@ class MODEL(nn.Module):
         """
         Reimplementing: https://github.com/WXinlong/DenseCL/blob/main/openselfsup/models/densecl.py
         """
+        batch_size = len(img_a)
+
+        # Visualize the data
         if visualize and self.rank == 0:
-            log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
+            log_imgs = torch.stack(
+                [img_a[0 : batch_size // 2], img_b[0 : batch_size // 2]], dim=1
+            ).flatten(0, 1)
             log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
             wandb.log(
                 {
@@ -576,8 +652,90 @@ class MODEL(nn.Module):
 
         # compute query features
         embd_q = self.encoder_q.backbone(img_a)[3]
-        print(f"{embd_q.shape = }")
-        q = self.encoder_q.projector(embd_q.flatten(1))
+        _q = self.encoder_q.neck(embd_q)
+        q_local = _q["x_local_pred"] if self.use_predictor else _q["x_local_proj"]
+        q_global = _q["x_global_pred"] if self.use_predictor else _q["x_global_proj"]
+
+        # normalize query features
+        q_local = F.normalize(
+            q_local.view(q_local.size(0), q_local.size(1), -1), dim=1
+        )  # NxS^2
+        q_global = F.normalize(q_global, dim=1)
+        embd_q = F.normalize(embd_q.view(embd_q.size(0), embd_q.size(1), -1), dim=1)
+
+        # compute key features
+        with torch.no_grad():  # no gradient to keys
+            self._momentum_update_key_encoder()  # update the key encoder
+
+            # shuffle for making use of BN
+            img_b, idx_unshuffle = self._batch_shuffle_ddp(img_b)
+
+            # compute query features
+            embd_k = self.encoder_k.backbone(img_b)[3]
+            _k = self.encoder_k.neck(embd_k)
+            k_local = _k["x_local_proj"]
+            k_local_proj_pooled = _k["x_avgpool_local_proj"]
+            k_global = _k["x_global_proj"]
+
+            # normalize query features
+            k_local = F.normalize(
+                k_local.view(k_local.size(0), k_local.size(1), -1), dim=1
+            )  # NxS^2
+            k_local_proj_pooled = F.normalize(k_local_proj_pooled, dim=1)
+            k_global = F.normalize(k_global, dim=1)
+            embd_k = F.normalize(embd_k.view(embd_k.size(0), embd_k.size(1), -1), dim=1)
+
+            # undo shuffle
+            k_local = self._batch_unshuffle_ddp(k_local, idx_unshuffle)
+            k_local_proj_pooled = self._batch_unshuffle_ddp(
+                k_local_proj_pooled, idx_unshuffle
+            )
+            k_global = self._batch_unshuffle_ddp(k_global, idx_unshuffle)
+            embd_k = self._batch_unshuffle_ddp(embd_k, idx_unshuffle)
+
+        # compute global similarities
+        pos_global = torch.einsum(
+            "nc,nc->n",
+            [q_global, k_global],
+        ).unsqueeze(-1)
+        neg_global = torch.einsum(
+            "nc,ck->nk",
+            [q_global, self.queue.clone().detach()],
+        )
+
+        # local backbone feature similarity
+        backbone_sim_matrix = torch.einsum(
+            "ncx,ncy->nxy", [embd_q, embd_k]
+        )  # NxS^2xS^2
+        pos_global_k_idx = backbone_sim_matrix.max(dim=2)[1]  # NxS^2
+
+        # local projection head feature similarity
+        local_sim_matrix = torch.einsum("ncx,ncy->nxy", [q_local, k_local])  # NxS^2xS^2
+
+        # identify positive scores using similarity scores
+        pos_local = torch.gather(
+            local_sim_matrix, 2, pos_global_k_idx.unsqueeze(2)
+        )  # NxS^2
+        assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
+
+        neg_local = torch.einsum("nc,ck->nk", [q_local, self.queue2.clone().detach()])
+
+        # losses
+        loss_global = self.contrastive_head(
+            pos=pos_global, neg=neg_global, temperature=self.temp_global
+        )
+        loss_local = self.contrastive_head(
+            pos=pos_local, neg=neg_local, temperature=self.temp_local
+        )
+        loss = (
+            1 - self.lmbd_dense_loss
+        ) * loss_global + self.lmbd_dense_loss * loss_local
+
+        # Update momentum queue
+        self._dequeue_and_enqueue(k_global)
+        self._dequeue_and_enqueue2(k_local_proj_pooled)
+
+        return loss
 
     def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         if visualize and self.rank == 0:
@@ -616,7 +774,7 @@ class MODEL(nn.Module):
         # dequeue and enqueue
         self._dequeue_and_enqueue(k)
 
-        loss = F.cross_entropy(logits_moco/self.instance_logits_temp, labels_moco).mean()
+        loss = F.cross_entropy(logits_moco/self.temp_global, labels_moco).mean()
 
         acc1, acc5 = self._accuracy(logits_moco, labels_moco, topk=(1, 5))
 
@@ -986,7 +1144,7 @@ class MODEL(nn.Module):
         labels_moco = torch.zeros(logits_moco.shape[0], dtype=torch.long).cuda()
 
         # apply temperature
-        logits_moco /= self.instance_logits_temp
+        logits_moco /= self.temp_global
 
         # dequeue and enqueue
         self._dequeue_and_enqueue(k_pos)
@@ -994,7 +1152,7 @@ class MODEL(nn.Module):
         loss_instance = F.cross_entropy(logits_moco, labels_moco)
 
         # dense loss of softmax
-        logits_dense /= self.dense_logits_temp
+        logits_dense /= self.temp_local
         output_dense_log = (-1.0) * nn.LogSoftmax(dim=1)(logits_dense)
         output_dense_log = output_dense_log.reshape(output_dense_log.shape[0], -1)
         loss_dense = torch.mean(
@@ -1002,7 +1160,7 @@ class MODEL(nn.Module):
             / labels_dense.sum(dim=1)
         )
 
-        loss = loss_instance + loss_dense * self.lmbd_cp2_dense_loss
+        loss = loss_instance + loss_dense * self.lmbd_dense_loss
 
         acc1, acc5 = self._accuracy(logits_moco, labels_moco, topk=(1, 5))
         acc_dense_pos = logits_dense.reshape(logits_dense.shape[0], -1).argmax(dim=1)
