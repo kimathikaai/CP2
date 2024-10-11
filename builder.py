@@ -145,7 +145,96 @@ class NegativeType(Enum):
     MEDIAN = 3
 
 
-class CP2_MOCO(nn.Module):
+class DenseCLNeck(nn.Module):
+    """The non-linear neck in DenseCL.
+    Single and dense in parallel: fc-relu-fc, conv-relu-conv
+    Reimplementing: https://github.com/WXinlong/DenseCL/blob/main/openselfsup/models/densecl.py
+    """
+
+    def __init__(self, in_channels, hid_channels, out_channels, num_grid=None):
+        super(DenseCLNeck, self).__init__()
+
+        self.avgpool_global = nn.AdaptiveAvgPool2d((1, 1))
+        self.global_projector = nn.Sequential(
+            nn.Linear(in_channels, hid_channels),
+            nn.ReLU(inplace=True),
+            nn.Linear(hid_channels, out_channels),
+        )
+        self.global_predictor = nn.Sequential(
+            nn.Linear(out_channels, hid_channels),
+            nn.ReLU(inplace=True),
+            nn.Linear(hid_channels, out_channels),
+        )
+
+        self.with_pool = num_grid != None
+        if self.with_pool:
+            self.pool = nn.AdaptiveAvgPool2d((num_grid, num_grid))
+
+        self.local_projector = nn.Sequential(
+            nn.Conv2d(in_channels, hid_channels, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(hid_channels, out_channels, 1),
+        )
+        self.local_predictor = nn.Sequential(
+            nn.Conv2d(out_channels, hid_channels, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(hid_channels, out_channels, 1),
+        )
+        self.avgpool_local = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.init_weights()
+
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+            elif isinstance(
+                m,
+                (
+                    nn.BatchNorm1d,
+                    nn.BatchNorm2d,
+                    nn.GroupNorm,
+                    nn.SyncBatchNorm,
+                ),
+            ):
+                if m.weight is not None:
+                    nn.init.constant_(m.weight, 1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        # assert len(x) == 1
+        # x = x[0]
+
+        x_global = self.avgpool_global(x)
+        x_global_proj = self.global_projector(x_global.view(x_global.size(0), -1))
+        x_global_pred = self.global_predictor(x_global_proj)
+
+        if self.with_pool:
+            x = self.pool(x)  # sxs
+
+        x_local_proj = self.local_projector(x)  # sxs: bxdxsxs
+        x_local_pred = self.local_predictor(x_local_proj)
+
+        x_avgpool_local = self.avgpool_local(x_local_pred)  # 1x1: bxdx1x1
+        x_avgpool_local = x_avgpool_local.view(x_avgpool_local.size(0), -1)  # bxd
+
+        return {
+            "x_global_proj": x_global_proj,
+            "x_local_proj": x_local_proj,
+            "x_global_pred": x_global_pred,
+            "x_local_pred": x_local_pred,
+        }
+
+
+class MODEL(nn.Module):
     def __init__(
         self,
         cfg,
@@ -169,7 +258,7 @@ class CP2_MOCO(nn.Module):
         unet_truncated_dec_blocks=2,
         device=None,
     ):
-        super(CP2_MOCO, self).__init__()
+        super(MODEL, self).__init__()
 
         self.K = K
         self.m = m
@@ -279,9 +368,20 @@ class CP2_MOCO(nn.Module):
                 nn.ReLU(inplace=True),
                 nn.Linear(in_features=hidden_features, out_features=self.dim),
             )
+
         elif pretrain_type == PretrainType.CP2:
             assert self.negative_type == NegativeType.NONE
             assert self.mapping_type == MappingType.CP2
+
+        elif pretrain_type == PretrainType.DENSECL:
+            self.avgpool_global = nn.AdaptiveAvgPool2d((1, 1))
+
+            self.encoder_q.neck = DenseCLNeck(
+                in_channels=2048, hid_channels=2048, out_channels=self.dim
+            )
+            self.encoder_q.neck = DenseCLNeck(
+                in_channels=2048, hid_channels=2048, out_channels=self.dim
+            )
 
         # Exact copy parameters
         for param_q, param_k in zip(
@@ -454,8 +554,30 @@ class CP2_MOCO(nn.Module):
             return self.forward_moco(**kwargs)
         elif self.pretrain_type == PretrainType.PROPOSED:
             return self.forward_cp2(**kwargs)
+        elif self.pretrain_type == PretrainType.DENSECL:
+            return self.forward_densecl(**kwargs)
         else:
             raise NotImplementedError(f"{self.pretrain_type = }")
+
+    def forward_densecl(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+        """
+        Reimplementing: https://github.com/WXinlong/DenseCL/blob/main/openselfsup/models/densecl.py
+        """
+        if visualize and self.rank == 0:
+            log_imgs = torch.stack([img_a, img_b], dim=1).flatten(0, 1)
+            log_grid = torchvision.utils.make_grid(log_imgs, nrow=2)
+            wandb.log(
+                {
+                    "train-examples": wandb.Image(
+                        log_grid, caption=self.pretrain_type.name
+                    )
+                }
+            )
+
+        # compute query features
+        embd_q = self.encoder_q.backbone(img_a)[3]
+        print(f"{embd_q.shape = }")
+        q = self.encoder_q.projector(embd_q.flatten(1))
 
     def forward_moco(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
         if visualize and self.rank == 0:
