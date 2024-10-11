@@ -420,7 +420,7 @@ class MODEL(nn.Module):
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
             )
-            self.encoder_q.neck = DenseCLNeck(
+            self.encoder_k.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
             )
             # Parameters
