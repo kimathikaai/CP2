@@ -729,10 +729,16 @@ class MODEL(nn.Module):
 
         # identify positive scores using similarity scores
         pos_local = torch.gather(
-            local_sim_matrix, 2, pos_global_k_idx.unsqueeze(2)
+            local_sim_matrix,
+            2,
+            pos_global_k_idx.unsqueeze(2),
+        ).squeeze(
+            -1
         )  # NxS^2
         assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
 
+        q_local = q_local.permute(0, 2, 1) # NxS^2xC
+        q_local = q_local.reshape(-1, q_local.size(2)) # NS^2xC
         neg_local = torch.einsum("nc,ck->nk", [q_local, self.queue2.clone().detach()])
 
         dense_average_positive_scores = pos_local
