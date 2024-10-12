@@ -71,6 +71,7 @@ class SegmentationModule(L.LightningModule):
             PretrainType.MOCO,
             PretrainType.BYOL,
             PretrainType.PROPOSED,
+            PretrainType.DENSECL
         ]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
