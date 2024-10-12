@@ -35,6 +35,7 @@ class PretrainType(Enum):
     MOSREP_IMGNET = 16
     CLOVE_IMGNET = 17
     DENSECL = 18
+    PROPOSED_V2 = 19
 
 
 class Stage(Enum):
@@ -71,7 +72,8 @@ class SegmentationModule(L.LightningModule):
             PretrainType.MOCO,
             PretrainType.BYOL,
             PretrainType.PROPOSED,
-            PretrainType.DENSECL
+            PretrainType.DENSECL,
+            PretrainType.PROPOSED_V2
         ]:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint
             checkpoint = torch.load(checkpoint_path)
