@@ -737,8 +737,11 @@ class MODEL(nn.Module):
         )  # NxS^2
         assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
 
+        # Move pixels to batch dimension
         q_local = q_local.permute(0, 2, 1) # NxS^2xC
         q_local = q_local.reshape(-1, q_local.size(2)) # NS^2xC
+        pos_local = pos_local.view(-1).unsqueeze(-1) # NS^2x1
+
         neg_local = torch.einsum("nc,ck->nk", [q_local, self.queue2.clone().detach()])
 
         dense_average_positive_scores = pos_local
