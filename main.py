@@ -44,6 +44,8 @@ def get_args():
 
     parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
 
+    parser.add_argument('--debug', action='store_true', help='Debug')
+
     parser.add_argument('--pretrain_from_scratch', action='store_true', help='Whether to initialize with ImageNet weights')
 
     # Logging
@@ -381,8 +383,8 @@ def main_worker(rank, args):
         if args.cap_queue
         else DEFAULT_QUEUE_SIZE,
         dim=128
-        if args.pretrain_type == PretrainType.CP2
-        or args.pretrain_type == PretrainType.PROPOSED
+        if args.pretrain_type
+        in [PretrainType.CP2, PretrainType.PROPOSED, PretrainType.DENSECL]
         else 256,
         pretrain_from_scratch=args.pretrain_from_scratch,
         include_background=args.include_background,
@@ -682,5 +684,12 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    # spawn parallel process
-    mp.spawn(main_worker, args=[args], nprocs=args.world_size)
+    if args.debug:
+        args.batch_size = 8
+        args.world_size = 1
+        args.num_workers_per_dataset = args.num_workers // (args.world_size * 3)
+        print(f"{args.num_workers_per_dataset = }")
+        main_worker(0, args)
+    else:
+        # spawn parallel process
+        mp.spawn(main_worker, args=[args], nprocs=args.world_size)
