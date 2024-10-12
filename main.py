@@ -47,6 +47,7 @@ def get_args():
     parser.add_argument('--debug', action='store_true', help='Debug')
 
     parser.add_argument('--pretrain_from_scratch', action='store_true', help='Whether to initialize with ImageNet weights')
+    parser.add_argument('--use_predictor', action='store_true', help='Whether to include a predictor in the online branch')
 
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
@@ -377,14 +378,24 @@ def main_worker(rank, args):
         cfg,
         m=0.999
         if args.pretrain_type
-        in [PretrainType.CP2, PretrainType.PROPOSED, PretrainType.DENSECL]
+        in [
+            PretrainType.CP2,
+            PretrainType.PROPOSED,
+            PretrainType.DENSECL,
+            PretrainType.PROPOSED_V2,
+        ]
         else 0.996,
         K=min(len_dataset, DEFAULT_QUEUE_SIZE)
         if args.cap_queue
         else DEFAULT_QUEUE_SIZE,
         dim=128
         if args.pretrain_type
-        in [PretrainType.CP2, PretrainType.PROPOSED, PretrainType.DENSECL]
+        in [
+            PretrainType.CP2,
+            PretrainType.PROPOSED,
+            PretrainType.DENSECL,
+            PretrainType.PROPOSED_V2,
+        ]
         else 256,
         pretrain_from_scratch=args.pretrain_from_scratch,
         include_background=args.include_background,
@@ -400,6 +411,7 @@ def main_worker(rank, args):
         dense_logits_temp=args.dense_logits_temp,
         instance_logits_temp=args.instance_logits_temp,
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
+        use_predictor=args.use_predictor,
         device=device,
         rank=rank,
     )

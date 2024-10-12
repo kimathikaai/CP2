@@ -428,6 +428,19 @@ class MODEL(nn.Module):
             assert self.temp_global == 0.2, f"{self.temp_global = }"
             assert self.temp_local == 0.2, f"{self.temp_local = }"
             assert self.use_predictor == False
+        elif pretrain_type == PretrainType.PROPOSED_V2:
+            self.encoder_q.neck = DenseCLNeck(
+                in_channels=2048, hid_channels=2048, out_channels=self.dim
+            )
+            self.encoder_k.neck = DenseCLNeck(
+                in_channels=2048, hid_channels=2048, out_channels=self.dim
+            )
+            # Parameters
+            assert self.momentum == 0.999, f"{self.momentum = }"
+            assert self.lmbd_dense_loss == 0.5, f"{self.lmbd_dense_loss = }"
+            assert self.temp_global == 0.2, f"{self.temp_global = }"
+            assert self.temp_local == 0.2, f"{self.temp_local = }"
+            assert self.use_predictor == True
 
         # Exact copy parameters
         for param_q, param_k in zip(
@@ -626,6 +639,8 @@ class MODEL(nn.Module):
         elif self.pretrain_type == PretrainType.PROPOSED:
             return self.forward_cp2(**kwargs)
         elif self.pretrain_type == PretrainType.DENSECL:
+            return self.forward_densecl(**kwargs)
+        elif self.pretrain_type == PretrainType.PROPOSED_V2:
             return self.forward_densecl(**kwargs)
         else:
             raise NotImplementedError(f"{self.pretrain_type = }")
@@ -1403,6 +1418,17 @@ class MODEL(nn.Module):
                 wandb.log({"train/acc_ins": self.acc_ins.avg})
 
             if self.pretrain_type == PretrainType.DENSECL:
+                # fmt:off
+                wandb.log(
+                    {
+                        "train/loss_ins": self.loss_i.avg,
+                        "train/loss_dense": self.loss_d.avg,
+                        "train/cross_image_variance_source": self.cross_image_variance_source.avg,
+                        "train/cross_image_variance_target": self.cross_image_variance_target.avg,
+                    })
+                # fmt:on
+
+            if self.pretrain_type == PretrainType.PROPOSED_V2:
                 # fmt:off
                 wandb.log(
                     {
