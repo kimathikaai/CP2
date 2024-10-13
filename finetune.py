@@ -40,7 +40,7 @@ def get_args():
     parser.add_argument("--wandb_project", type=str, default='ssl-pretraining', help='Wandb project name')
     parser.add_argument("--wandb_team", type=str, default='critical-ml-dg', help='Wandb team name')
     parser.add_argument("--num_gpus", type=int, default=2, help='number of gpus')
-    parser.add_argument("--num_workers", type=int, default=0, help='number of workers')
+    parser.add_argument("--num_workers", type=int, default=32, help='number of workers')
     parser.add_argument("--fast_dev_run", action='store_true', help="For debugging")
     parser.add_argument("--use_profiler", action='store_true', help="For debugging")
 
@@ -48,12 +48,12 @@ def get_args():
 
     parser.add_argument('--lemon_data', action='store_true', help='Running with lemon data')
 
-    parser.add_argument('--img_height', default=512, type=int)
-    parser.add_argument('--img_width', default=512, type=int)
+    parser.add_argument('--img_height', default=352, type=int)
+    parser.add_argument('--img_width', default=352, type=int)
 
-    parser.add_argument("--batch_size", type=int, default=10, help='Batch size to train with')
+    parser.add_argument("--batch_size", type=int, default=16, help='Batch size to train with')
     parser.add_argument("--learning_rate", type=float, default=0.0001, help='Max learning rate used during training') 
-    parser.add_argument("--epochs", type=int, default=20, help='Number of training epochs') 
+    parser.add_argument("--epochs", type=int, default=100, help='Number of training epochs') 
     parser.add_argument("--weight_decay", type=float, default=0.0001, help='weight decay of optimizer')  ## from centralai codebase
 
     parser.add_argument("--pretrain_path", type=str, default='', help="If starting training from a pretrained checkpoint, list the full path to the model with this flag.")
