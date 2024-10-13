@@ -142,6 +142,12 @@ def get_args():
         args.img_height = 512
         args.img_width = 512
 
+    if args.pretrain_type == PretrainType.DENSECL:
+        args.dense_logits_temp = 0.2
+        args.instance_logits_temp = 0.2
+        args.use_predictor = False
+        args.lmbd_cp2_dense_loss = 0.5
+
     # if args.pretrain_type == PretrainType.PROPOSED:
     #     args.mapping_type = builder.MappingType.PIXEL_REGION_ID
     #     args.lmbd_not_corr_weight = 0
