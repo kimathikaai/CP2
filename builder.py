@@ -297,6 +297,7 @@ class MODEL(nn.Module):
         dense_logits_temp=1,
         unet_truncated_dec_blocks=2,
         use_predictor=False,
+        use_avgpool_global = False,
         device=None,
     ):
         super(MODEL, self).__init__()
@@ -313,6 +314,7 @@ class MODEL(nn.Module):
         self.temp_local = dense_logits_temp
         self.contrastive_head = ContrastiveHead()
         self.use_predictor = use_predictor
+        self.use_avgpool_global = use_avgpool_global
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -429,6 +431,7 @@ class MODEL(nn.Module):
             assert self.temp_global == 0.2, f"{self.temp_global = }"
             assert self.temp_local == 0.2, f"{self.temp_local = }"
             assert self.use_predictor == False
+            assert self.use_avgpool_global == False
         elif pretrain_type == PretrainType.PROPOSED_V2:
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
@@ -441,7 +444,6 @@ class MODEL(nn.Module):
             assert self.lmbd_dense_loss == 0.5, f"{self.lmbd_dense_loss = }"
             assert self.temp_global == 0.2, f"{self.temp_global = }"
             assert self.temp_local == 0.2, f"{self.temp_local = }"
-            assert self.use_predictor == True
 
         # Exact copy parameters
         for param_q, param_k in zip(
@@ -671,6 +673,12 @@ class MODEL(nn.Module):
         _q = self.encoder_q.neck(embd_q)
         q_local = _q["x_local_pred"] if self.use_predictor else _q["x_local_proj"]
         q_global = _q["x_global_pred"] if self.use_predictor else _q["x_global_proj"]
+        if self.use_avgpool_global:
+            q_global = (
+                _q["x_avgpool_local_pred"]
+                if self.use_predictor
+                else _q["x_avgpool_local_proj"]
+            )
 
         # normalize query features
         q_local = F.normalize(
@@ -692,6 +700,8 @@ class MODEL(nn.Module):
             k_local = _k["x_local_proj"]
             k_local_proj_pooled = _k["x_avgpool_local_proj"]
             k_global = _k["x_global_proj"]
+            if self.use_avgpool_global:
+                k_global = _q["x_avgpool_local_proj"]
 
             # normalize query features
             k_local = F.normalize(
@@ -753,9 +763,9 @@ class MODEL(nn.Module):
         assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
 
         # Move pixels to batch dimension
-        q_local = q_local.permute(0, 2, 1) # NxS^2xC
-        q_local = q_local.reshape(-1, q_local.size(2)) # NS^2xC
-        pos_local = pos_local.view(-1).unsqueeze(-1) # NS^2x1
+        q_local = q_local.permute(0, 2, 1)  # NxS^2xC
+        q_local = q_local.reshape(-1, q_local.size(2))  # NS^2xC
+        pos_local = pos_local.view(-1).unsqueeze(-1)  # NS^2x1
 
         neg_local = torch.einsum("nc,ck->nk", [q_local, self.queue2.clone().detach()])
 
