@@ -39,7 +39,7 @@ do
         --pretrain_type $pretrain_type \
 	    --data_dirs "$data_dir/Kvasir-SEG/Images" \
         --config $pretrain_config_file \
-        --epochs 100 \
+        --epochs 200 \
         --lr 0.001 \
         --num-workers 64 \
         --batch-size 32 \
@@ -47,10 +47,6 @@ do
         --foreground_min 0.5 \
         --foreground_max 0.8 \
         --backbone_type 'DEEPLABV3' \
-        --lmbd_cp2_dense_loss 0.5 \
-        --dense_logits_temp 0.2 \
-        --instance_logits_temp 0.2 \
-        --use_predictor \
         --cap_queue 
 
     #
