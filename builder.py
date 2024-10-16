@@ -701,7 +701,7 @@ class MODEL(nn.Module):
             k_local_proj_pooled = _k["x_avgpool_local_proj"]
             k_global = _k["x_global_proj"]
             if self.use_avgpool_global:
-                k_global = _q["x_avgpool_local_proj"]
+                k_global = _k["x_avgpool_local_proj"]
 
             # normalize query features
             k_local = F.normalize(
