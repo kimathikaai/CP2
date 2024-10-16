@@ -49,6 +49,7 @@ def get_args():
     parser.add_argument('--pretrain_from_scratch', action='store_true', help='Whether to initialize with ImageNet weights')
     parser.add_argument('--use_predictor', action='store_true', help='Whether to include a predictor in the online branch')
     parser.add_argument('--use_avgpool_global', action='store_true', help='Use the local projector for global representation')
+    parser.add_argument('--use_symmetrical_loss', action='store_true', help='Make both images query and keys')
 
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
@@ -420,6 +421,7 @@ def main_worker(rank, args):
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         use_predictor=args.use_predictor,
         use_avgpool_global=args.use_avgpool_global,
+        use_symmetrical_loss=args.use_symmetrical_loss,
         device=device,
         rank=rank,
     )
