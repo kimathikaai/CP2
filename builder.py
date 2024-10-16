@@ -297,7 +297,8 @@ class MODEL(nn.Module):
         dense_logits_temp=1,
         unet_truncated_dec_blocks=2,
         use_predictor=False,
-        use_avgpool_global = False,
+        use_avgpool_global=False,
+        use_symmetrical_loss=False,
         device=None,
     ):
         super(MODEL, self).__init__()
@@ -315,6 +316,7 @@ class MODEL(nn.Module):
         self.contrastive_head = ContrastiveHead()
         self.use_predictor = use_predictor
         self.use_avgpool_global = use_avgpool_global
+        self.use_symmetrical_loss = use_symmetrical_loss
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -432,6 +434,7 @@ class MODEL(nn.Module):
             assert self.temp_local == 0.2, f"{self.temp_local = }"
             assert self.use_predictor == False
             assert self.use_avgpool_global == False
+            assert self.use_symmetrical_loss == False
         elif pretrain_type == PretrainType.PROPOSED_V2:
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
@@ -668,137 +671,235 @@ class MODEL(nn.Module):
                 }
             )
 
-        # compute query features
-        embd_q = self.encoder_q.backbone(img_a)[3]
-        _q = self.encoder_q.neck(embd_q)
-        q_local = _q["x_local_pred"] if self.use_predictor else _q["x_local_proj"]
-        q_global = _q["x_global_pred"] if self.use_predictor else _q["x_global_proj"]
-        if self.use_avgpool_global:
-            q_global = (
-                _q["x_avgpool_local_pred"]
-                if self.use_predictor
-                else _q["x_avgpool_local_proj"]
-            )
-
-        # normalize query features
-        q_local = F.normalize(
-            q_local.view(q_local.size(0), q_local.size(1), -1), dim=1
-        )  # NxS^2
-        q_global = F.normalize(q_global, dim=1)
-        embd_q = F.normalize(embd_q.view(embd_q.size(0), embd_q.size(1), -1), dim=1)
-
-        # compute key features
-        with torch.no_grad():  # no gradient to keys
-            self._momentum_update_key_encoder()  # update the key encoder
-
-            # shuffle for making use of BN
-            img_b, idx_unshuffle = self._batch_shuffle_ddp(img_b)
-
+        def get_query_features(img):
             # compute query features
-            embd_k = self.encoder_k.backbone(img_b)[3]
-            _k = self.encoder_k.neck(embd_k)
-            k_local = _k["x_local_proj"]
-            k_local_proj_pooled = _k["x_avgpool_local_proj"]
-            k_global = _k["x_global_proj"]
-            if self.use_avgpool_global:
-                k_global = _k["x_avgpool_local_proj"]
-
-            # normalize query features
-            k_local = F.normalize(
-                k_local.view(k_local.size(0), k_local.size(1), -1), dim=1
-            )  # NxS^2
-            k_local_proj_pooled = F.normalize(k_local_proj_pooled, dim=1)
-            k_global = F.normalize(k_global, dim=1)
-            embd_k = F.normalize(embd_k.view(embd_k.size(0), embd_k.size(1), -1), dim=1)
-
-            # undo shuffle
-            k_local = self._batch_unshuffle_ddp(k_local, idx_unshuffle)
-            k_local_proj_pooled = self._batch_unshuffle_ddp(
-                k_local_proj_pooled, idx_unshuffle
+            embd_q = self.encoder_q.backbone(img)[3]
+            _q = self.encoder_q.neck(embd_q)
+            q_local = _q["x_local_pred"] if self.use_predictor else _q["x_local_proj"]
+            q_global = (
+                _q["x_global_pred"] if self.use_predictor else _q["x_global_proj"]
             )
-            k_global = self._batch_unshuffle_ddp(k_global, idx_unshuffle)
-            embd_k = self._batch_unshuffle_ddp(embd_k, idx_unshuffle)
+            if self.use_avgpool_global:
+                q_global = (
+                    _q["x_avgpool_local_pred"]
+                    if self.use_predictor
+                    else _q["x_avgpool_local_proj"]
+                )
+            # normalize query features
+            q_local = F.normalize(
+                q_local.view(q_local.size(0), q_local.size(1), -1), dim=1
+            )  # NxS^2
+            q_global = F.normalize(q_global, dim=1)
+            embd_q = F.normalize(embd_q.view(embd_q.size(0), embd_q.size(1), -1), dim=1)
 
-        # compute global similarities
-        pos_global = torch.einsum(
-            "nc,nc->n",
-            [q_global, k_global],
-        ).unsqueeze(-1)
-        neg_global = torch.einsum(
-            "nc,ck->nk",
-            [q_global, self.queue.clone().detach()],
+            return embd_q, q_local, q_global
+
+        def get_key_features(img):
+            # compute key features
+            with torch.no_grad():  # no gradient to keys
+                self._momentum_update_key_encoder()  # update the key encoder
+
+                # shuffle for making use of BN
+                img, idx_unshuffle = self._batch_shuffle_ddp(img)
+
+                # compute query features
+                embd_k = self.encoder_k.backbone(img)[3]
+                _k = self.encoder_k.neck(embd_k)
+                k_local = _k["x_local_proj"]
+                k_local_proj_pooled = _k["x_avgpool_local_proj"]
+                k_global = _k["x_global_proj"]
+                if self.use_avgpool_global:
+                    k_global = k_local_proj_pooled
+
+                # normalize query features
+                k_local = F.normalize(
+                    k_local.view(k_local.size(0), k_local.size(1), -1), dim=1
+                )  # NxS^2
+                k_local_proj_pooled = F.normalize(k_local_proj_pooled, dim=1)
+                k_global = F.normalize(k_global, dim=1)
+                embd_k = F.normalize(
+                    embd_k.view(embd_k.size(0), embd_k.size(1), -1), dim=1
+                )
+
+                # undo shuffle
+                k_local = self._batch_unshuffle_ddp(k_local, idx_unshuffle)
+                k_local_proj_pooled = self._batch_unshuffle_ddp(
+                    k_local_proj_pooled, idx_unshuffle
+                )
+                k_global = self._batch_unshuffle_ddp(k_global, idx_unshuffle)
+                embd_k = self._batch_unshuffle_ddp(embd_k, idx_unshuffle)
+
+                return embd_k, k_local, k_global, k_local_proj_pooled
+
+        def compute_global_loss(q, k, log_metrics=False):
+            # compute global similarities
+            pos_global = torch.einsum(
+                "nc,nc->n",
+                [q, k],
+            ).unsqueeze(-1)
+            neg_global = torch.einsum(
+                "nc,ck->nk",
+                [q, self.queue.clone().detach()],
+            )
+            loss_global = self.contrastive_head(
+                pos=pos_global, neg=neg_global, temperature=self.temp_global
+            )
+
+            # metrics
+            if log_metrics and self.rank == 0:
+                # Compute variance metrics
+                cross_image_variance_source = q.std(0).mean()
+                cross_image_variance_target = k.std(0).mean()
+
+                # Compute score metrics
+                instance_average_positive_scores = pos_global
+                instance_average_negative_scores = neg_global.mean(1)
+                instance_negative_quartiles = torch.quantile(
+                    neg_global,
+                    q=torch.Tensor([0.25, 0.5, 0.75]).to(neg_global.device),
+                    dim=1,
+                )
+                instance_lower_negative_scores = instance_negative_quartiles[0]
+                instance_median_negative_scores = instance_negative_quartiles[1]
+                instance_upper_negative_scores = instance_negative_quartiles[2]
+
+                # fmt:off
+                wandb.log(
+                    {
+                        "step/instance_average_positive_scores": instance_average_positive_scores.mean().item(),
+                        "step/instance_average_negative_scores": instance_average_negative_scores.mean().item(),
+                        "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
+                        "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
+                        "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
+                        "step/cross_image_variance_source_step": cross_image_variance_source.item(),
+                        "step/cross_image_variance_target_step": cross_image_variance_target.item()
+                    }
+                )
+                # fmt:on
+
+            return loss_global
+
+        def compute_local_loss(q_embed, k_embed, q_local, k_local, log_metrics=False):
+            # local backbone feature similarity
+            backbone_sim_matrix = torch.einsum(
+                "ncx,ncy->nxy", [q_embed, k_embed]
+            )  # NxS^2xS^2
+            pos_global_k_idx = backbone_sim_matrix.max(dim=2)[1]  # NxS^2
+
+            # local projection head feature similarity
+            local_sim_matrix = torch.einsum(
+                "ncx,ncy->nxy", [q_local, k_local]
+            )  # NxS^2xS^2
+
+            # identify top positive scores using similarity scores
+            pos_local = torch.gather(
+                local_sim_matrix,
+                2,
+                pos_global_k_idx.unsqueeze(2),
+            ).squeeze(
+                -1
+            )  # NxS^2
+            assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
+
+            # Move pixels to batch dimension
+            q_local = q_local.permute(0, 2, 1)  # NxS^2xC
+            q_local = q_local.reshape(-1, q_local.size(2))  # NS^2xC
+            pos_local = pos_local.view(-1).unsqueeze(-1)  # NS^2x1
+
+            neg_local = torch.einsum(
+                "nc,ck->nk", [q_local, self.queue2.clone().detach()]
+            )
+
+            if log_metrics and self.rank == 0:
+                dense_average_positive_scores = pos_local
+                dense_average_negative_scores = neg_local.mean(1)
+                dense_negative_quartiles = torch.quantile(
+                    neg_local,
+                    q=torch.Tensor([0.25, 0.5, 0.75]).to(neg_local.device),
+                    dim=1,
+                )
+                dense_lower_negative_scores = dense_negative_quartiles[0]
+                dense_median_negative_scores = dense_negative_quartiles[1]
+                dense_upper_negative_scores = dense_negative_quartiles[2]
+
+                # fmt:off
+                wandb.log(
+                    {
+                        "step/dense_average_positive_scores": dense_average_positive_scores.mean().item(),
+                        "step/dense_average_negative_scores": dense_average_negative_scores.mean().item(),
+                        "step/dense_lower_negative_scores": dense_lower_negative_scores.mean().item(),
+                        "step/dense_median_negative_scores": dense_median_negative_scores.mean().item(),
+                        "step/dense_upper_negative_scores": dense_upper_negative_scores.mean().item(),
+                    }
+                )
+                # fmt:on
+
+            # losses
+            loss_local = self.contrastive_head(
+                pos=pos_local, neg=neg_local, temperature=self.temp_local
+            )
+
+            return loss_local
+
+        embd_q_1, q_local_1, q_global_1 = get_query_features(img_a)
+        embd_k_1, k_local_1, k_global_1, k_local_proj_pooled_1 = get_key_features(img_b)
+        loss_global = compute_global_loss(
+            q=q_global_1,
+            k=k_global_1,
+            log_metrics=True,
+        )
+        loss_local = compute_local_loss(
+            q_embed=embd_q_1,
+            k_embed=embd_k_1,
+            q_local=q_local_1,
+            k_local=k_local_1,
+            log_metrics=True,
         )
 
-        # Compute variance metrics
-        cross_image_variance_source = q_global.std(0).mean()
-        cross_image_variance_target = k_global.std(0).mean()
+        # features for updating the momentum queue
+        to_update_queues = {"global": k_global_1, "local": k_local_proj_pooled_1}
 
-        # Compute score metrics
-        instance_average_positive_scores = pos_global
-        instance_average_negative_scores = neg_global.mean(1)
-        instance_negative_quartiles = torch.quantile(
-            neg_global, q=torch.Tensor([0.25, 0.5, 0.75]).to(neg_global.device), dim=1
-        )
-        instance_lower_negative_scores = instance_negative_quartiles[0]
-        instance_median_negative_scores = instance_negative_quartiles[1]
-        instance_upper_negative_scores = instance_negative_quartiles[2]
+        if self.use_symmetrical_loss:
+            embd_q_2, q_local_2, q_global_2 = get_query_features(img_b)
+            embd_k_2, k_local_2, k_global_2, k_local_proj_pooled_2 = get_key_features(
+                img_a
+            )
+            loss_global_2 = compute_global_loss(
+                q=q_global_2,
+                k=k_global_2,
+            )
+            loss_local_2 = compute_local_loss(
+                q_embed=embd_q_2,
+                k_embed=embd_k_2,
+                q_local=q_local_2,
+                k_local=k_local_2,
+            )
 
-        # local backbone feature similarity
-        backbone_sim_matrix = torch.einsum(
-            "ncx,ncy->nxy", [embd_q, embd_k]
-        )  # NxS^2xS^2
-        pos_global_k_idx = backbone_sim_matrix.max(dim=2)[1]  # NxS^2
+            # combine losses
+            loss_global = (loss_global + loss_global_2).mean()
+            loss_local = (loss_local + loss_local_2).mean()
 
-        # local projection head feature similarity
-        local_sim_matrix = torch.einsum("ncx,ncy->nxy", [q_local, k_local])  # NxS^2xS^2
+            # features for updating the momentum queue
+            # inspired from https://github.com/megvii-research/revisitAIRL/blob/7afeb0299d354de873808cf6ed7848924e72c1d9/exp/mocov2_plus.py#L57
+            if step % 2 == 0:
+                to_update_queues = {
+                    "global": k_global_2,
+                    "local": k_local_proj_pooled_2,
+                }
 
-        # identify positive scores using similarity scores
-        pos_local = torch.gather(
-            local_sim_matrix,
-            2,
-            pos_global_k_idx.unsqueeze(2),
-        ).squeeze(
-            -1
-        )  # NxS^2
-        assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
-
-        # Move pixels to batch dimension
-        q_local = q_local.permute(0, 2, 1)  # NxS^2xC
-        q_local = q_local.reshape(-1, q_local.size(2))  # NS^2xC
-        pos_local = pos_local.view(-1).unsqueeze(-1)  # NS^2x1
-
-        neg_local = torch.einsum("nc,ck->nk", [q_local, self.queue2.clone().detach()])
-
-        dense_average_positive_scores = pos_local
-        dense_average_negative_scores = neg_local.mean(1)
-        dense_negative_quartiles = torch.quantile(
-            neg_local, q=torch.Tensor([0.25, 0.5, 0.75]).to(neg_local.device), dim=1
-        )
-        dense_lower_negative_scores = dense_negative_quartiles[0]
-        dense_median_negative_scores = dense_negative_quartiles[1]
-        dense_upper_negative_scores = dense_negative_quartiles[2]
-
-        # losses
-        loss_global = self.contrastive_head(
-            pos=pos_global, neg=neg_global, temperature=self.temp_global
-        )
-        loss_local = self.contrastive_head(
-            pos=pos_local, neg=neg_local, temperature=self.temp_local
-        )
+        # Loss
         loss = (
             1 - self.lmbd_dense_loss
         ) * loss_global + self.lmbd_dense_loss * loss_local
 
         # Update momentum queue
-        self._dequeue_and_enqueue(k_global)
-        self._dequeue_and_enqueue2(k_local_proj_pooled)
+        self._dequeue_and_enqueue(to_update_queues["gobal"])
+        self._dequeue_and_enqueue2(to_update_queues["local"])
 
         # Update logs
-        self.loss_o.update(loss.item(), img_a.size(0))
+        self.loss_o.update(loss.item(), batch_size)
         self.loss_i.update(loss_global.item(), batch_size)
         self.loss_d.update(loss_local.item(), batch_size)
-        self.cross_image_variance_source.update(cross_image_variance_source, batch_size)
-        self.cross_image_variance_target.update(cross_image_variance_target, batch_size)
 
         if self.rank == 0:
             # fmt:off
@@ -807,18 +908,6 @@ class MODEL(nn.Module):
                     "train/loss_step": self.loss_o.val,
                     "train/loss_ins_step": self.loss_i.val,
                     "train/loss_dense_step": self.loss_d.val,
-                    "train/cross_image_variance_source_step": self.cross_image_variance_source.val,
-                    "train/cross_image_variance_target_step": self.cross_image_variance_target.val,
-                    "step/instance_average_positive_scores": instance_average_positive_scores.mean().item(),
-                    "step/instance_average_negative_scores": instance_average_negative_scores.mean().item(),
-                    "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
-                    "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
-                    "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
-                    "step/dense_average_positive_scores": dense_average_positive_scores.mean().item(),
-                    "step/dense_average_negative_scores": dense_average_negative_scores.mean().item(),
-                    "step/dense_lower_negative_scores": dense_lower_negative_scores.mean().item(),
-                    "step/dense_median_negative_scores": dense_median_negative_scores.mean().item(),
-                    "step/dense_upper_negative_scores": dense_upper_negative_scores.mean().item(),
                 }
             )
             # fmt:on
@@ -1448,9 +1537,7 @@ class MODEL(nn.Module):
                 wandb.log(
                     {
                         "train/loss_ins": self.loss_i.avg,
-                        "train/loss_dense": self.loss_d.avg,
-                        "train/cross_image_variance_source": self.cross_image_variance_source.avg,
-                        "train/cross_image_variance_target": self.cross_image_variance_target.avg,
+                        "train/loss_dense": self.loss_d.avg
                     })
                 # fmt:on
 
