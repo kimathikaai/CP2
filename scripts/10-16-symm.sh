@@ -30,7 +30,7 @@ do
     echo "Started pre-training for ${pretrain_run_id}"
 
     # Start pre-training
-    CUDA_VISIBLE_DEVICES=0,1 python main.py \
+    CUDA_VISIBLE_DEVICES=2,3 python main.py \
         --seed 0 \
         --run_id $pretrain_run_id \
         --log_dir $log_dir \
@@ -65,7 +65,7 @@ do
                 current_dir=${data_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
-                CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
+                CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                     --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
@@ -92,7 +92,7 @@ do
     pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PH"
     echo "Started pre-training for ${pretrain_run_id}"
     # Start pre-training
-    CUDA_VISIBLE_DEVICES=0,1 python main.py \
+    CUDA_VISIBLE_DEVICES=2,3 python main.py \
         --seed 0 \
         --run_id $pretrain_run_id \
         --log_dir $log_dir \
@@ -127,7 +127,7 @@ do
                 current_dir=${data_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
-                CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
+                CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                     --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
@@ -154,7 +154,7 @@ do
     pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PHHS"
     echo "Started pre-training for ${pretrain_run_id}"
     # Start pre-training
-    CUDA_VISIBLE_DEVICES=0,1 python main.py \
+    CUDA_VISIBLE_DEVICES=2,3 python main.py \
         --seed 0 \
         --run_id $pretrain_run_id \
         --log_dir $log_dir \
@@ -189,7 +189,7 @@ do
                 current_dir=${data_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
-                CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
+                CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                     --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
@@ -222,7 +222,7 @@ do
                 current_dir=${hist_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
-                CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
+                CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                     --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
@@ -249,7 +249,7 @@ do
     pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PHNI"
     echo "Started pre-training for ${pretrain_run_id}"
     # Start pre-training
-    CUDA_VISIBLE_DEVICES=0,1 python main.py \
+    CUDA_VISIBLE_DEVICES=2,3 python main.py \
         --seed 0 \
         --run_id $pretrain_run_id \
         --log_dir $log_dir \
@@ -284,7 +284,7 @@ do
                 current_dir=${data_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
-                CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
+                CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                     --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
@@ -311,7 +311,7 @@ do
     pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-HS"
     echo "Started pre-training for ${pretrain_run_id}"
     # Start pre-training
-    CUDA_VISIBLE_DEVICES=0,1 python main.py \
+    CUDA_VISIBLE_DEVICES=2,3 python main.py \
         --seed 0 \
         --run_id $pretrain_run_id \
         --log_dir $log_dir \
@@ -346,7 +346,7 @@ do
                 current_dir=${hist_dir}/${dir}
                 echo "Fine-tuning ${run_id}"
 
-                CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
+                CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                     --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                     --pretrain_type $pretrain_type \
                     --config $finetune_config_file \
