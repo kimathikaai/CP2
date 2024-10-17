@@ -143,6 +143,7 @@ class NegativeType(Enum):
     FIXED = 1
     AVERAGE = 2
     MEDIAN = 3
+    HARD = 4
 
 
 class CP2_MOCO(nn.Module):
@@ -511,6 +512,11 @@ class CP2_MOCO(nn.Module):
         instance_median_negative_scores = instance_negative_quartiles[1]
         instance_upper_negative_scores = instance_negative_quartiles[2]
 
+        # negative_threshold = torch.quantile(l_neg, q = 0.75, dim = 1)
+        # hard_negative_mask = l_neg > negative_threshold.unsqueeze(1)
+        # mask_negatives = l_neg.clone()
+        # mask_negatives[hard_negative_mask] = 0 # Set values above 75th percentile to 0
+
         if self.rank == 0:
             # fmt:off
             wandb.log(
@@ -522,6 +528,7 @@ class CP2_MOCO(nn.Module):
                     "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
                     "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
                     "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
+                    "step/masked_negative_scores": mask_negatives.mean().item()
                 }
             )
             # fmt:on
@@ -824,6 +831,15 @@ class CP2_MOCO(nn.Module):
                 )
                 - 1
             )
+
+        elif self.negative_type == NegativeType.HARD:
+            # _logits_dense -> N x 196 x 196
+            negatives = _logits_dense[~(_labels_dense.bool())] # Select only the negatives
+            third_quartile = torch.quantile(negatives, q = 0.75)
+            hard_negative_mask = negatives > third_quartile
+
+            _logits_dense[~(_labels_dense.bool())][hard_negative_mask] *= 1.5
+            
         elif self.negative_type == NegativeType.NONE:
             pass
         else:
