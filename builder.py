@@ -966,7 +966,7 @@ class MODEL(nn.Module):
         ) * loss_global + self.lmbd_dense_loss * loss_local
 
         # Update momentum queue
-        self._dequeue_and_enqueue(to_update_queues["gobal"])
+        self._dequeue_and_enqueue(to_update_queues["global"])
         self._dequeue_and_enqueue2(to_update_queues["local"])
 
         # Update logs
