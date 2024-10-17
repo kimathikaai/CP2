@@ -528,7 +528,7 @@ class CP2_MOCO(nn.Module):
                     "step/instance_lower_negative_scores": instance_lower_negative_scores.mean().item(),
                     "step/instance_median_negative_scores": instance_median_negative_scores.mean().item(),
                     "step/instance_upper_negative_scores": instance_upper_negative_scores.mean().item(),
-                    "step/masked_negative_scores": mask_negatives.mean().item()
+                    # "step/masked_negative_scores": mask_negatives.mean().item()
                 }
             )
             # fmt:on
@@ -839,7 +839,7 @@ class CP2_MOCO(nn.Module):
             hard_negative_mask = negatives > third_quartile
 
             _logits_dense[~(_labels_dense.bool())][hard_negative_mask] *= 1.5
-            
+
         elif self.negative_type == NegativeType.NONE:
             pass
         else:
