@@ -298,6 +298,7 @@ class MODEL(nn.Module):
         use_predictor=False,
         use_avgpool_global=False,
         use_symmetrical_loss=False,
+        lmbd_coordinate=0,
         device=None,
     ):
         super(MODEL, self).__init__()
@@ -316,6 +317,9 @@ class MODEL(nn.Module):
         self.use_predictor = use_predictor
         self.use_avgpool_global = use_avgpool_global
         self.use_symmetrical_loss = use_symmetrical_loss
+
+        assert lmbd_coordinate >= 0 and lmbd_coordinate <= 1, f"{lmbd_coordinate = }"
+        self.lmbd_coordinate = lmbd_coordinate
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -390,10 +394,18 @@ class MODEL(nn.Module):
         self.output_stride = int(test_sample.shape[2] / output_shape[2])
         print(f"{self.output_stride = }")
 
+        # Get the backbone output stride
+        test_sample = torch.rand(2, 3, 224, 224)
+        output_shape = self.encoder_q.backbone(test_sample)[3].shape
+        self.backbone_output_stride = int(test_sample.shape[2] / output_shape[2])
+        print(f"{self.backbone_output_stride = }")
+
         if pretrain_type in [PretrainType.BYOL, PretrainType.MOCO]:
             # Projection/prediction networks
             # backbone_features = 2048 * 7 * 7  # if imgs are 224x224
-            backbone_features = 2048 * 14 * 14  # if imgs are 224x224
+            backbone_features = (
+                2048 * self.backbone_output_stride**2
+            )  # if imgs are 224x224
             hidden_features = 2048
             batch_norm = (
                 nn.BatchNorm1d(hidden_features)
@@ -434,6 +446,7 @@ class MODEL(nn.Module):
             assert self.use_predictor == False
             assert self.use_avgpool_global == False
             assert self.use_symmetrical_loss == False
+            assert self.lmbd_coordinate == 0
         elif pretrain_type == PretrainType.PROPOSED_V2:
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
@@ -650,7 +663,20 @@ class MODEL(nn.Module):
         else:
             raise NotImplementedError(f"{self.pretrain_type = }")
 
-    def forward_densecl(self, img_a, img_b, bg0, bg1, visualize, step, new_epoch):
+    def forward_densecl(
+        self,
+        img_a,
+        img_b,
+        bg0,
+        bg1,
+        visualize,
+        step,
+        new_epoch,
+        pixel_ids_a,
+        pixel_ids_b,
+        region_ids_a,
+        region_ids_b,
+    ):
         """
         Reimplementing: https://github.com/WXinlong/DenseCL/blob/main/openselfsup/models/densecl.py
         """
@@ -778,7 +804,15 @@ class MODEL(nn.Module):
 
             return loss_global
 
-        def compute_local_loss(q_embed, k_embed, q_local, k_local, log_metrics=False):
+        def compute_local_loss(
+            q_embed,
+            k_embed,
+            q_local,
+            k_local,
+            q_pixel_ids,
+            k_pixel_ids,
+            log_metrics=False,
+        ):
             # local backbone feature similarity
             backbone_sim_matrix = torch.einsum(
                 "ncx,ncy->nxy", [q_embed, k_embed]
@@ -799,6 +833,25 @@ class MODEL(nn.Module):
                 -1
             )  # NxS^2
             assert len(pos_local.shape) == 2, f"{pos_local.shape = }"
+
+            # identify the coordinate correspondences
+            _correlations = get_correlation_map(q_pixel_ids, k_pixel_ids)
+            iou = _correlations["iou"]  # size N
+            corr_map = _correlations["corr_map"].detach()  # NxS^2xS^2
+
+            # get pixels in overlapping regions
+            overlap_pixels = corr_map.sum(-1) > 0
+            # mask out scores for non_overlapping regions
+            overlap_scores = local_sim_matrix * corr_map  # NxS^2xS^2
+            # get scores for pixels in overlapping regions
+            coord_overlap_scores = overlap_scores.sum(-1)[overlap_pixels]  # NxK
+            # find the scores (using sim not coord) that are in overlapping regions
+            pos_local_overlap = pos_local[overlap_pixels]  # NxK
+            # get the mix of the sim based and coord based scores
+            pos_local[overlap_pixels] = (
+                pos_local_overlap * (1 - self.lmbd_coordinate)
+                + coord_overlap_scores * self.lmbd_coordinate
+            )
 
             # Move pixels to batch dimension
             q_local = q_local.permute(0, 2, 1)  # NxS^2xC
@@ -821,6 +874,9 @@ class MODEL(nn.Module):
                 dense_median_negative_scores = dense_negative_quartiles[1]
                 dense_upper_negative_scores = dense_negative_quartiles[2]
 
+                # calculate the number of non zero ious
+                non_zero_iou = torch.count_nonzero(iou) / len(iou)
+
                 # fmt:off
                 wandb.log(
                     {
@@ -829,6 +885,8 @@ class MODEL(nn.Module):
                         "step/dense_lower_negative_scores": dense_lower_negative_scores.mean().item(),
                         "step/dense_median_negative_scores": dense_median_negative_scores.mean().item(),
                         "step/dense_upper_negative_scores": dense_upper_negative_scores.mean().item(),
+                        "step/average_iou": iou.mean().item(),
+                        "step/non_zero_iou_ratio": non_zero_iou.item()
                     }
                 )
                 # fmt:on
@@ -839,6 +897,18 @@ class MODEL(nn.Module):
             )
 
             return loss_local
+
+        # Downsample the pixel ids
+        pixel_ids_a = pixel_ids_a[
+            :,
+            self.backbone_output_stride // 2 :: self.backbone_output_stride,
+            self.backbone_output_stride // 2 :: self.backbone_output_stride,
+        ]
+        pixel_ids_b = pixel_ids_b[
+            :,
+            self.backbone_output_stride // 2 :: self.backbone_output_stride,
+            self.backbone_output_stride // 2 :: self.backbone_output_stride,
+        ]
 
         embd_q_1, q_local_1, q_global_1 = get_query_features(img_a)
         embd_k_1, k_local_1, k_global_1, k_local_proj_pooled_1 = get_key_features(img_b)
@@ -852,6 +922,8 @@ class MODEL(nn.Module):
             k_embed=embd_k_1,
             q_local=q_local_1,
             k_local=k_local_1,
+            q_pixel_ids=pixel_ids_a,
+            k_pixel_ids=pixel_ids_b,
             log_metrics=True,
         )
 
@@ -872,6 +944,8 @@ class MODEL(nn.Module):
                 k_embed=embd_k_2,
                 q_local=q_local_2,
                 k_local=k_local_2,
+                q_pixel_ids=pixel_ids_b,
+                k_pixel_ids=pixel_ids_a,
             )
 
             # combine losses
