@@ -54,6 +54,7 @@ class SegmentationModule(L.LightningModule):
         weight_decay,
         num_classes,
         image_shape,
+        use_backbone_only
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -80,14 +81,16 @@ class SegmentationModule(L.LightningModule):
             assert (
                 checkpoint["pretrain_type"] == pretrain_type.name
             ), f"{checkpoint['pretrain_type']} != {pretrain_type}"
+            filter = 'encoder_q.backbone' if use_backbone_only else 'encoder_q.'
             state_dict = {
                 x.replace("module.encoder_q.", ""): y
                 for x, y in checkpoint["state_dict"].items()
-                if "encoder_q" in x
+                if filter in x
             }
             # Remove the conv_seg weights for now (mismatch in num_classes)
             state_dict = {x: y for x, y in state_dict.items() if "conv_seg" not in x}
             print(self.model.load_state_dict(state_dict, strict=False))
+            print(f"[INFO] {use_backbone_only = }")
 
         elif pretrain_type == PretrainType.MIRROR:
             checkpoint_path = self.model.backbone.init_cfg.checkpoint

@@ -31,6 +31,8 @@ def get_args():
 
     parser.add_argument('--offline_wandb', action='store_true', help='Run wandb offline')
 
+    parser.add_argument('--use_backbone_only', action='store_true', help='Whether or not to only use the backbone pre-trained weights')
+
     parser.add_argument("--img_dirs", nargs='+', help='Folder(s) containing image data')
     parser.add_argument("--mask_dirs", nargs='+', help='Folder(s) containing segmentation masks')
     parser.add_argument("--train_data_ratio", type=float, default=1.0, help='Amount of finetuning data')
@@ -210,6 +212,7 @@ def main(args):
         weight_decay=args.weight_decay,
         num_classes=args.num_classes,
         image_shape=datamodule.image_shape,
+        use_backbone_only=args.use_backbone_only
     )
 
     # if linear evaluation freeze backbone
