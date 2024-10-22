@@ -59,7 +59,10 @@ def get_args():
     parser.add_argument("--backbone_type", type=str, choices=[x.name for x in builder.BackboneType], default=builder.BackboneType.DEEPLABV3.name)
     parser.add_argument("--pretrain_type", type=str, choices=[x.name for x in PretrainType], default=PretrainType.CP2.name)
     parser.add_argument("--mapping_type", type=str, choices=[x.name for x in builder.MappingType], default=builder.MappingType.CP2.name)
-    parser.add_argument("--negative_type", type=str, choices=[x.name for x in builder.NegativeType], default=builder.NegativeType.HARD.name)
+    parser.add_argument("--negative_type", type=str, choices=[x.name for x in builder.NegativeType], default=builder.NegativeType.NONE.name)
+    
+    parser.add_argument("--hard_negative_sampling_type", type=str, choices=[x.name for x in builder.HardNegativeSamplingType], default=builder.HardNegativeSamplingType.EASY_NEG.name)
+
     parser.add_argument("--negative_scale", type=float, default=2)
     parser.add_argument('--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
@@ -400,6 +403,7 @@ def main_worker(rank, args):
         unet_truncated_dec_blocks=args.unet_truncated_dec_blocks,
         device=device,
         rank=rank,
+        hard_negative_sampling_type=args.hard_negative_sampling_type
     )
     model.to(device)
     logger.info(model)

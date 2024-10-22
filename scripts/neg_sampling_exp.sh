@@ -23,7 +23,7 @@ do
 #
 # PRE-TRAIN (HyperK+segpath)
 #
-    pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PHHS"
+    pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PA-HARD_NEG"
     echo "Started pre-training for ${pretrain_run_id}"
     # Start pre-training
     CUDA_VISIBLE_DEVICES=2,3 python main.py \
@@ -33,6 +33,8 @@ do
         --tags $tags \
         --pretrain_type $pretrain_type \
 	    --data_dirs "$data_dir/CVC-ClinicDB/Images" "$data_dir/CVC-ColonDB/Images" "$data_dir/ETIS-LaribPolypDB/Images" "$data_dir/Kvasir-SEG/Images"   \
+        --negative_type HARD \
+        --hard_negative_sampling_type EASY_NEG \
         --config $pretrain_config_file \
         --epochs 200 \
         --lr 0.001 \
@@ -48,6 +50,8 @@ done
 #
 # FINETUNE - POLYP
 #
+# pretrain_run_id="241016205733-pretrain-CP2-PA-HARD_NEG"
+# pretrain_type="CP2"
 for dir in Kvasir-SEG CVC-ClinicDB CVC-ColonDB ETIS-LaribPolypDB
 do
     for ratio in 0.3 1
@@ -57,8 +61,8 @@ do
             run_id="$(date +"%y%m%d%H%M%S")-${dir}-${pretrain_type}-R${ratio}-S${seed}-PA"
             current_dir=${data_dir}/${dir}
             echo "Fine-tuning ${run_id}"
-
-            CUDA_VISIBLE_DEVICES=0,2 python finetune.py \
+            
+            CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
                 --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                 --pretrain_type $pretrain_type \
                 --config $finetune_config_file \

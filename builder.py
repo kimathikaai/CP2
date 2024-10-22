@@ -146,6 +146,13 @@ class NegativeType(Enum):
     HARD = 4
 
 
+class HardNegativeSamplingType(Enum):
+    ZERO = 0
+    WEIGHTED = 1 
+    EASY_NEG = 2 
+
+
+
 class CP2_MOCO(nn.Module):
     def __init__(
         self,
@@ -169,6 +176,7 @@ class CP2_MOCO(nn.Module):
         dense_logits_temp=1,
         unet_truncated_dec_blocks=2,
         device=None,
+        hard_negative_sampling_type=HardNegativeSamplingType.EASY_NEG
     ):
         super(CP2_MOCO, self).__init__()
 
@@ -217,6 +225,9 @@ class CP2_MOCO(nn.Module):
         assert backbone_type in BackboneType
         self.backbone_type = backbone_type
 
+        # New for HNS
+        assert hard_negative_sampling_type in HardNegativeSamplingType
+        self.hard_negative_sampling_type = hard_negative_sampling_type 
         # No current handling for both
         if backbone_type != BackboneType.DEEPLABV3:
             assert (
@@ -281,7 +292,7 @@ class CP2_MOCO(nn.Module):
                 nn.Linear(in_features=hidden_features, out_features=self.dim),
             )
         elif pretrain_type == PretrainType.CP2:
-            assert self.negative_type == NegativeType.NONE
+            assert self.negative_type == NegativeType.NONE or self.negative_type == NegativeType.HARD
             assert self.mapping_type == MappingType.CP2
 
         # Exact copy parameters
@@ -833,13 +844,32 @@ class CP2_MOCO(nn.Module):
             )
 
         elif self.negative_type == NegativeType.HARD:
-            # _logits_dense -> N x 196 x 196
-            negatives = _logits_dense[~(_labels_dense.bool())] # Select only the negatives
-            third_quartile = torch.quantile(negatives, q = 0.75)
-            hard_negative_mask = negatives > third_quartile
 
-            _logits_dense[~(_labels_dense.bool())][hard_negative_mask] *= 1.5
+            if self.hard_negative_sampling_type == HardNegativeSamplingType.ZERO:
+                # _logits_dense -> N x 196 x 196
+                negatives = _logits_dense[~(_labels_dense.bool())] # Select only the negatives
+                third_quartile = torch.quantile(negatives, q = 0.75)
+                hard_negative_mask = negatives > third_quartile
 
+                _logits_dense[~(_labels_dense.bool())][hard_negative_mask] = 0
+            
+            elif self.hard_negative_sampling_type == HardNegativeSamplingType.WEIGHTED:
+                # _logits_dense -> N x 196 x 196
+                negatives = _logits_dense[~(_labels_dense.bool())] # Select only the negatives
+                third_quartile = torch.quantile(negatives, q = 0.75)
+                hard_negative_mask = negatives > third_quartile
+
+                _logits_dense[~(_labels_dense.bool())][hard_negative_mask] *= 2
+            
+            elif self.hard_negative_sampling_type == HardNegativeSamplingType.EASY_NEG:
+                # _logits_dense -> N x 196 x 196
+                negatives = _logits_dense[~(_labels_dense.bool())] # Select only the negatives
+                third_quartile = torch.quantile(negatives, q = 0.75)
+                first_quartile = torch.quantile(negatives, q = 0.25).detach()
+                hard_negative_mask = negatives > third_quartile
+                non_hard_negatives = ~hard_negative_mask
+                _logits_dense[~(_labels_dense.bool())][non_hard_negatives] = first_quartile 
+        
         elif self.negative_type == NegativeType.NONE:
             pass
         else:
