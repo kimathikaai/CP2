@@ -122,7 +122,7 @@ def get_args():
                         metavar='N', help='print frequency (default: 10)')
     parser.add_argument('--scalar-freq', default=100, type=int,
                         help='metrics writing frequency')
-    parser.add_argument('--ckpt-freq', default=10, type=int,
+    parser.add_argument('--ckpt-freq', default=100, type=int,
                         help='checkpoint saving frequency')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='path to latest checkpoint (default: none)')
@@ -150,6 +150,10 @@ def get_args():
         args.instance_logits_temp = 0.2
         args.use_predictor = False
         args.lmbd_cp2_dense_loss = 0.5
+        assert args.pixel_ids_stride == 1
+
+    if args.pretrain_type == PretrainType.PROPOSED_V2:
+        assert args.pixel_ids_stride == 1
 
     # if args.pretrain_type == PretrainType.PROPOSED:
     #     args.mapping_type = builder.MappingType.PIXEL_REGION_ID
@@ -521,7 +525,11 @@ def main_worker(rank, args):
             logger,
             rank,
         )
-        if epoch % args.ckpt_freq == args.ckpt_freq - 1 or step > args.max_steps:
+        if (
+            epoch % args.ckpt_freq == args.ckpt_freq - 1
+            or step > args.max_steps
+            or epoch >= args.epochs - 1
+        ):
             if rank == 0:
                 save_checkpoint(
                     {
