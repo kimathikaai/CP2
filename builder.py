@@ -840,12 +840,19 @@ class MODEL(nn.Module):
             iou = _correlations["iou"]  # size N
             corr_map = _correlations["corr_map"].detach()  # NxS^2xS^2
 
+            # number of positives per pixel
+            num_dense_positives = torch.count_nonzero(corr_map, dim=2)  # NxS^2
+
             # get pixels in overlapping regions
-            overlap_pixels = corr_map.sum(-1) > 0
+            overlap_pixels = corr_map.sum(-1) > 0 # NxS^2
             # mask out scores for non_overlapping regions
             overlap_scores = local_sim_matrix * corr_map  # NxS^2xS^2
-            # get scores for pixels in overlapping regions
-            coord_overlap_scores = overlap_scores.sum(-1)[overlap_pixels]  # NxK
+            # get average positive scores for pixels in overlapping regions
+            # this allows for multiple positive coord pixels
+            average_positive_scores = overlap_scores.sum(-1) / (
+                num_dense_positives + 1e-6
+            ) # NxS^2
+            coord_overlap_scores = average_positive_scores[overlap_pixels]  # NxK
             # find the scores (using sim not coord) that are in overlapping regions
             pos_local_overlap = pos_local[overlap_pixels]  # NxK
             # get the mix of the sim based and coord based scores
@@ -860,7 +867,9 @@ class MODEL(nn.Module):
                 # find the overlapping pixels
                 corr_max = corr_map[overlap_pixels, :].max(dim=2)[1].flatten()
                 sim_max = local_sim_matrix[overlap_pixels, :].max(dim=2)[1].flatten()
-                assert len(corr_max) == len(sim_max), f"{corr_max.shape = }, {sim_max.shape = }"
+                assert len(corr_max) == len(
+                    sim_max
+                ), f"{corr_max.shape = }, {sim_max.shape = }"
                 matching_positives_rate = (corr_max == sim_max).float().mean().item()
 
             # Move pixels to batch dimension
@@ -1374,8 +1383,10 @@ class MODEL(nn.Module):
 
         elif self.negative_type == NegativeType.HARD:
             # _logits_dense -> N x 196 x 196
-            negatives = _logits_dense[~(_labels_dense.bool())] # Select only the negatives
-            third_quartile = torch.quantile(negatives, q = 0.75)
+            negatives = _logits_dense[
+                ~(_labels_dense.bool())
+            ]  # Select only the negatives
+            third_quartile = torch.quantile(negatives, q=0.75)
             hard_negative_mask = negatives > third_quartile
 
             _logits_dense[~(_labels_dense.bool())][hard_negative_mask] *= 1.5
