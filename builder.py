@@ -854,6 +854,15 @@ class MODEL(nn.Module):
                 + coord_overlap_scores * self.lmbd_coordinate
             )
 
+            # Calculate how often the max is the same as ground truth
+            matching_positives_rate = -1
+            if corr_map.sum() > 0:
+                # find the overlapping pixels
+                corr_max = corr_map[overlap_pixels, :].max(dim=2)[1].flatten()
+                sim_max = local_sim_matrix[overlap_pixels, :].max(dim=2)[1].flatten()
+                assert len(corr_max) == len(sim_max), f"{corr_max.shape = }, {sim_max.shape = }"
+                matching_positives_rate = (corr_max == sim_max).float().mean()
+
             # Move pixels to batch dimension
             q_local = q_local.permute(0, 2, 1)  # NxS^2xC
             q_local = q_local.reshape(-1, q_local.size(2))  # NS^2xC
@@ -887,7 +896,8 @@ class MODEL(nn.Module):
                         "step/dense_median_negative_scores": dense_median_negative_scores.mean().item(),
                         "step/dense_upper_negative_scores": dense_upper_negative_scores.mean().item(),
                         "step/average_iou": iou.mean().item(),
-                        "step/non_zero_iou_ratio": non_zero_iou.item()
+                        "step/non_zero_iou_ratio": non_zero_iou.item(),
+                        "step/matching_positives_rate": matching_positives_rate.item()
                     }
                 )
                 # fmt:on
