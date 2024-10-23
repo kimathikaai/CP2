@@ -26,11 +26,11 @@ do
         #
 
         # Create logging name
-        pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PA"
+        pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PA-L${lmbd_coordinate}"
         echo "Started pre-training for ${pretrain_run_id}"
 
         # Start pre-training
-        CUDA_VISIBLE_DEVICES=2,3 python main.py \
+        CUDA_VISIBLE_DEVICES=0,1 python main.py \
             --seed 0 \
             --run_id $pretrain_run_id \
             --log_dir $log_dir \
@@ -51,6 +51,8 @@ do
             --instance_logits_temp 0.2 \
             --lmbd_coordinate $lmbd_coordinate \
             --use_avgpool_global \
+            --dist-url 'tcp://localhost:10002' \
+            --pixel_ids_stride 8 \
             --cap_queue 
 
         #
@@ -66,7 +68,7 @@ do
                     current_dir=${data_dir}/${dir}
                     echo "Fine-tuning ${run_id}"
 
-                    CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
+                    CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
                         --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                         --pretrain_type $pretrain_type \
                         --config $finetune_config_file \
@@ -90,10 +92,10 @@ do
         #
         # PRE-TRAIN (HyperK) # baseline
         #
-        pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PH"
+        pretrain_run_id="$(date +"%y%m%d%H%M%S")-pretrain-${pretrain_type}-PH-L${lmbd_coordinate}"
         echo "Started pre-training for ${pretrain_run_id}"
         # Start pre-training
-        CUDA_VISIBLE_DEVICES=2,3 python main.py \
+        CUDA_VISIBLE_DEVICES=0,1 python main.py \
             --seed 0 \
             --run_id $pretrain_run_id \
             --log_dir $log_dir \
@@ -114,6 +116,8 @@ do
             --instance_logits_temp 0.2 \
             --lmbd_coordinate $lmbd_coordinate \
             --use_avgpool_global \
+            --dist-url 'tcp://localhost:10002' \
+            --pixel_ids_stride 8 \
             --cap_queue 
         
         #
@@ -129,7 +133,7 @@ do
                     current_dir=${data_dir}/${dir}
                     echo "Fine-tuning ${run_id}"
 
-                    CUDA_VISIBLE_DEVICES=2,3 python finetune.py \
+                    CUDA_VISIBLE_DEVICES=0,1 python finetune.py \
                         --pretrain_path "${log_dir}/${pretrain_run_id}/checkpoint.ckpt" \
                         --pretrain_type $pretrain_type \
                         --config $finetune_config_file \

@@ -865,8 +865,8 @@ class MODEL(nn.Module):
             matching_positives_rate = -1
             if corr_map.sum() > 0:
                 # find the overlapping pixels
-                corr_max = corr_map[overlap_pixels, :].max(dim=2)[1].flatten()
-                sim_max = local_sim_matrix[overlap_pixels, :].max(dim=2)[1].flatten()
+                corr_max = corr_map[overlap_pixels, :].max(dim=-1)[1].flatten()
+                sim_max = local_sim_matrix[overlap_pixels, :].max(dim=-1)[1].flatten()
                 assert len(corr_max) == len(
                     sim_max
                 ), f"{corr_max.shape = }, {sim_max.shape = }"
