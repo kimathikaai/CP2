@@ -135,6 +135,7 @@ def get_args():
     args.backbone_type = builder.BackboneType[args.backbone_type]
     args.mapping_type = builder.MappingType[args.mapping_type]
     args.negative_type = builder.NegativeType[args.negative_type]
+    args.hard_negative_sampling_type = builder.HardNegativeSamplingType[args.hard_negative_sampling_type]
 
     # lemon data
     if args.lemon_data:
