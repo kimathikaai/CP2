@@ -152,8 +152,8 @@ def get_args():
         args.lmbd_cp2_dense_loss = 0.5
         assert args.pixel_ids_stride == 1
 
-    if args.pretrain_type == PretrainType.PROPOSED_V2:
-        assert args.pixel_ids_stride == 1
+    # if args.pretrain_type == PretrainType.PROPOSED_V2:
+    #     assert args.pixel_ids_stride == 1
 
     # if args.pretrain_type == PretrainType.PROPOSED:
     #     args.mapping_type = builder.MappingType.PIXEL_REGION_ID
