@@ -230,7 +230,7 @@ def main(args):
         sync_batchnorm=args.num_gpus > 1,
         precision=32,
         max_epochs=args.epochs,
-        logger=wandb_logger,
+        logger=wandb_logger if not args.fast_dev_run else None,
         profiler="simple" if args.use_profiler else None,
         fast_dev_run=args.fast_dev_run,
         callbacks=[checkpoint_callback, lr_callback, custom_callback],
@@ -238,7 +238,7 @@ def main(args):
     )
 
     # log additional parameters
-    if trainer.global_rank == 0:
+    if trainer.global_rank == 0 and not args.fast_dev_run:
         # wandb_logger.watch(model, log="all", log_graph=True)
         wandb_logger.experiment.config.update({"hyper-parameters": vars(args)})
         wandb_logger.experiment.config.update(
@@ -254,7 +254,7 @@ def main(args):
     #
     # Test the model
     #
-    if trainer.global_rank == 0:
+    if trainer.global_rank == 0 and not args.fast_dev_run:
         if args.num_gpus > 1:
             torch.distributed.destroy_process_group()
         # Setup a test trainer
