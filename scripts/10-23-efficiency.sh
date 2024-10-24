@@ -59,9 +59,9 @@ do
         fi
 
         if [ "$run_type" == "test" ]; then
-            for dir in Kvasir-SEG CVC-ClinicDB CVC-ColonDB ETIS-LaribPolypDB
+            for dir in ETIS-LaribPolypDB
             do
-                for seed in 0 1 2
+                for seed in 0
                 do
                     run_id="$(date +"%y%m%d%H%M%S")-${dir}-${pretrain_type}-R${ratio}-S${seed}-PHPA"
                     current_dir=${data_dir}/${dir}
