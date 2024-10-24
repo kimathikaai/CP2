@@ -324,7 +324,7 @@ class MODEL(nn.Module):
         self.use_learnable_lmbd_coordinate = use_learnable_lmbd_coordinate
         if self.use_learnable_lmbd_coordinate:
             self.lmbd_coordinate = nn.Parameter(
-                data=torch.Tensor(lmbd_coordinate), requires_grad=True
+                data=torch.ones(1) * lmbd_coordinate, requires_grad=True
             )
         else:
             self.lmbd_coordinate = lmbd_coordinate
