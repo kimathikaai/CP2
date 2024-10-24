@@ -51,6 +51,7 @@ def get_args():
     parser.add_argument('--use_avgpool_global', action='store_true', help='Use the local projector for global representation')
     parser.add_argument('--use_symmetrical_loss', action='store_true', help='Make both images query and keys')
     parser.add_argument('--lmbd_coordinate', default=0, type=float, help='[0,1] weight for coordinate positive pairs')
+    parser.add_argument('--use_learnable_lmbd_coordinate', action='store_true', help='Make the lmbd_coordinate lambda learnable')
 
     # Logging
     parser.add_argument("--log_dir", type=str, required=True, help='Where to store logs')
@@ -428,6 +429,7 @@ def main_worker(rank, args):
         use_avgpool_global=args.use_avgpool_global,
         use_symmetrical_loss=args.use_symmetrical_loss,
         lmbd_coordinate=args.lmbd_coordinate,
+        use_learnable_lmbd_coordinate=args.use_learnable_lmbd_coordinate,
         device=device,
         rank=rank,
     )

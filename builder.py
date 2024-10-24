@@ -300,6 +300,7 @@ class MODEL(nn.Module):
         use_avgpool_global=False,
         use_symmetrical_loss=False,
         lmbd_coordinate=0,
+        use_learnable_lmbd_coordinate=False,
         device=None,
     ):
         super(MODEL, self).__init__()
@@ -320,7 +321,13 @@ class MODEL(nn.Module):
         self.use_symmetrical_loss = use_symmetrical_loss
 
         assert lmbd_coordinate >= 0 and lmbd_coordinate <= 1, f"{lmbd_coordinate = }"
-        self.lmbd_coordinate = lmbd_coordinate
+        self.use_learnable_lmbd_coordinate = use_learnable_lmbd_coordinate
+        if self.use_learnable_lmbd_coordinate:
+            self.lmbd_coordinate = nn.Parameter(
+                data=torch.Tensor(lmbd_coordinate), requires_grad=True
+            )
+        else:
+            self.lmbd_coordinate = lmbd_coordinate
 
         assert mapping_type in MappingType
         self.mapping_type = mapping_type
@@ -448,6 +455,7 @@ class MODEL(nn.Module):
             assert self.use_avgpool_global == False
             assert self.use_symmetrical_loss == False
             assert self.lmbd_coordinate == 0
+            assert self.use_learnable_lmbd_coordinate == False
         elif pretrain_type == PretrainType.PROPOSED_V2:
             self.encoder_q.neck = DenseCLNeck(
                 in_channels=2048, hid_channels=2048, out_channels=self.dim
@@ -844,14 +852,14 @@ class MODEL(nn.Module):
             num_dense_positives = torch.count_nonzero(corr_map, dim=2)  # NxS^2
 
             # get pixels in overlapping regions
-            overlap_pixels = corr_map.sum(-1) > 0 # NxS^2
+            overlap_pixels = corr_map.sum(-1) > 0  # NxS^2
             # mask out scores for non_overlapping regions
             overlap_scores = local_sim_matrix * corr_map  # NxS^2xS^2
             # get average positive scores for pixels in overlapping regions
             # this allows for multiple positive coord pixels
             average_positive_scores = overlap_scores.sum(-1) / (
                 num_dense_positives + 1e-6
-            ) # NxS^2
+            )  # NxS^2
             coord_overlap_scores = average_positive_scores[overlap_pixels]  # NxK
             # find the scores (using sim not coord) that are in overlapping regions
             pos_local_overlap = pos_local[overlap_pixels]  # NxK
@@ -906,7 +914,8 @@ class MODEL(nn.Module):
                         "step/dense_upper_negative_scores": dense_upper_negative_scores.mean().item(),
                         "step/average_iou": iou.mean().item(),
                         "step/non_zero_iou_ratio": non_zero_iou.item(),
-                        "step/matching_positives_rate": matching_positives_rate
+                        "step/matching_positives_rate": matching_positives_rate,
+                        "step/lmbd_coordinate": self.lmbd_coordinate.item() if self.use_learnable_lmbd_coordinate else self.lmbd_coordinate
                     }
                 )
                 # fmt:on
